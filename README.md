@@ -1,8 +1,8 @@
-# pzmm — Project Zomboid Mod Manager
+# pzmm | Project Zomboid Mod Manager
 
 > Errors down to the Lua.
 
-A standalone desktop mod manager for Project Zomboid B42. Scans your active mods, detects real runtime errors straight from `console.txt`, maps them back to the responsible mod, surfaces file conflicts, and solves load order — no guesswork.
+A standalone desktop mod manager for Project Zomboid B42. Scans your active mods, detects real runtime errors straight from `console.txt`, maps them back to the responsible mod, surfaces file conflicts, and solves load order. 
 
 ![Python](https://img.shields.io/badge/python-3.11+-blue) ![PyQt6](https://img.shields.io/badge/PyQt6-6.6+-green) ![PZ](https://img.shields.io/badge/Project%20Zomboid-B42-red)
 
