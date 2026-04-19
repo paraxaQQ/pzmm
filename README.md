@@ -8,6 +8,8 @@ A standalone desktop mod manager for Project Zomboid B42. Scans your active mods
 
 ---
 
+**v0.2 being worked on currently!**
+
 ## Features
 
 - **Error tracking** — parses `console.txt` and maps every Lua error and stack trace back to the mod that caused it. Only shows errors for mods you currently have active.
