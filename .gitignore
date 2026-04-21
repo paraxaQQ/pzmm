@@ -55,3 +55,5 @@ pzmm-debug-*.zip
 # Icon design artifacts (keep only icon.ico committed)
 icon-*.ico
 icon-preview.png
+
+docs/
