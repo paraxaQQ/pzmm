@@ -1,32 +1,31 @@
 """Overview tab — stats cards + critical issues list."""
 from __future__ import annotations
+from datetime import datetime
+from pathlib import Path
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QScrollArea, QSizePolicy
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QScrollArea, QSizePolicy,
+    QPushButton, QFileDialog, QMessageBox
 )
 from PyQt6.QtCore import Qt
 from ui.style import COLOR_OK, COLOR_WARN, COLOR_ERROR
+from core import bundle as bundle_mod
 
 
 def _stat_card(value: str, label: str, color: str = "#5a8fff") -> QFrame:
     card = QFrame()
     card.setFrameShape(QFrame.Shape.StyledPanel)
-    card.setStyleSheet(f"""
-        QFrame {{
-            background: #1e1e2a;
-            border: 1px solid #2e2e40;
-            border-radius: 8px;
-        }}
-    """)
+    card.setObjectName("statCard")
     lay = QVBoxLayout(card)
     lay.setContentsMargins(20, 16, 20, 16)
     lay.setSpacing(4)
 
     val_lbl = QLabel(value)
-    val_lbl.setStyleSheet(f"font-size: 32px; font-weight: 800; color: {color}; background: transparent;")
+    val_lbl.setObjectName("stat_value")
+    val_lbl.setStyleSheet(f"color: {color};")
     val_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
     lbl = QLabel(label)
-    lbl.setStyleSheet("font-size: 11px; color: #555570; text-transform: uppercase; letter-spacing: 1px; background: transparent;")
+    lbl.setObjectName("statCardLabel")
     lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
     lay.addWidget(val_lbl)
@@ -49,6 +48,7 @@ def _issue_row(severity: str, text: str) -> QLabel:
 class OverviewTab(QWidget):
     def __init__(self):
         super().__init__()
+        self._last_scan: dict | None = None
         self._build()
 
     def _build(self):
@@ -61,10 +61,21 @@ class OverviewTab(QWidget):
         self._cards_row.setSpacing(14)
         outer.addLayout(self._cards_row)
 
-        # Issues section
+        # Issues section header with Export button
+        issues_row = QHBoxLayout()
         issues_lbl = QLabel("Issues")
-        issues_lbl.setStyleSheet("font-size: 13px; font-weight: 700; color: #9090b0; background: transparent;")
-        outer.addWidget(issues_lbl)
+        issues_lbl.setObjectName("issuesHeading")
+        issues_row.addWidget(issues_lbl)
+        issues_row.addStretch()
+        self._export_btn = QPushButton("Export Debug Bundle…")
+        self._export_btn.setToolTip(
+            "Zip up console.txt, every active mod.info, and a summary report — "
+            "ready to attach to a bug report."
+        )
+        self._export_btn.setEnabled(False)
+        self._export_btn.clicked.connect(self._export_bundle)
+        issues_row.addWidget(self._export_btn)
+        outer.addLayout(issues_row)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -84,9 +95,9 @@ class OverviewTab(QWidget):
     def _show_placeholder(self):
         self._clear_cards()
         self._add_card("—", "MODS")
+        self._add_card("—", "ERRORS")
+        self._add_card("—", "WARNINGS")
         self._add_card("—", "FILE CONFLICTS")
-        self._add_card("—", "FUNC CONFLICTS")
-        self._add_card("—", "B41 ISSUES")
         self._add_card("—", "DEP CYCLES")
         self._clear_issues()
         self._add_issue("info", "Click Scan to analyse your mod setup.")
@@ -110,7 +121,31 @@ class OverviewTab(QWidget):
         self._issues_layout.insertWidget(self._issues_layout.count() - 1,
                                          _issue_row(severity, text))
 
+    def _export_bundle(self):
+        if not self._last_scan:
+            return
+        ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+        default_name = f"pzmm-debug-{ts}.zip"
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export debug bundle",
+            default_name, "Zip archives (*.zip)"
+        )
+        if not path:
+            return
+        try:
+            n_info, size = bundle_mod.build_bundle(self._last_scan, Path(path))
+            QMessageBox.information(
+                self, "Debug bundle",
+                f"Wrote {Path(path).name}\n"
+                f"  {n_info} mod.info file(s) included\n"
+                f"  {size:,} bytes"
+            )
+        except Exception as e:
+            QMessageBox.critical(self, "Export failed", str(e))
+
     def update_results(self, scan_result: dict):
+        self._last_scan = scan_result
+        self._export_btn.setEnabled(True)
         mods      = scan_result["mods"]
         file_conf = scan_result["file_conflicts"]
         dep       = scan_result["dep_graph"]
@@ -118,8 +153,8 @@ class OverviewTab(QWidget):
 
         n_mods   = len(mods)
         n_file   = len(file_conf)
-        n_err    = len(report.errors)
-        n_warn   = len(report.warns)
+        n_err    = getattr(report, "error_occurrences", len(report.errors))
+        n_warn   = getattr(report, "warn_occurrences", len(report.warns))
         n_cycles = len(dep.cycles)
 
         self._clear_cards()
@@ -137,10 +172,18 @@ class OverviewTab(QWidget):
                 self._add_issue("error", f"Circular dependency: {m.name if m else cid}")
 
         for e in report.errors[:30]:
-            self._add_issue("error", f"{e.mod_name} — {e.message}")
+            count = max(1, getattr(e, "occurrence_count", 1))
+            suffix = f" (x{count})" if count > 1 else ""
+            kind = getattr(e, "kind", "")
+            ktxt = f" [{kind}]" if kind else ""
+            self._add_issue("error", f"{e.mod_name} - {e.message}{suffix}{ktxt}")
 
         for e in report.warns[:20]:
-            self._add_issue("warn", f"{e.mod_name} — {e.message}")
+            count = max(1, getattr(e, "occurrence_count", 1))
+            suffix = f" (x{count})" if count > 1 else ""
+            kind = getattr(e, "kind", "")
+            ktxt = f" [{kind}]" if kind else ""
+            self._add_issue("warn", f"{e.mod_name} - {e.message}{suffix}{ktxt}")
 
         for c in file_conf[:20]:
             names = ", ".join(p.name for p in c.providers)

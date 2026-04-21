@@ -2,16 +2,28 @@
 import os
 
 block_cipher = None
+ROOT = os.path.dirname(os.path.abspath(SPEC))
 
 a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[
+        (os.path.join(ROOT, 'docs', 'HOW_TO_READ_ERRORS.md'), 'docs'),
+        (os.path.join(ROOT, 'icon.ico'), '.'),
+    ],
     hiddenimports=[
         'PyQt6.QtCore',
         'PyQt6.QtGui',
         'PyQt6.QtWidgets',
+        # AI providers — dynamically imported in core/ai.py
+        'anthropic',
+        'openai',
+        # pzmm modules touched only via lazy imports (e.g. ui.backups_dialog
+        # is imported inside AITab._open_history)
+        'core.backups',
+        'ui.backups_dialog',
+        'ui.confirm_write_dialog',
     ],
     hookspath=[],
     hooksconfig={},

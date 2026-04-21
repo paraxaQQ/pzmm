@@ -1,5 +1,6 @@
 """File conflict detection and load order solver."""
 from __future__ import annotations
+import hashlib
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -20,8 +21,17 @@ class FileConflict:
 _CONFLICT_EXTS = {".lua", ".txt", ".xml", ".json", ".ini"}
 
 
+def _sha1(path: Path) -> str:
+    h = hashlib.sha1()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 128), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
 def scan_file_conflicts(mods: list[ModInfo]) -> list[FileConflict]:
-    path_map: dict[str, list[ModInfo]] = defaultdict(list)
+    # rel path -> [(provider mod, concrete file path)]
+    path_map: dict[str, list[tuple[ModInfo, Path]]] = defaultdict(list)
 
     for mod in mods:
         media = mod.path / "media"
@@ -34,18 +44,34 @@ def scan_file_conflicts(mods: list[ModInfo]) -> list[FileConflict]:
                 continue
             try:
                 rel = f.relative_to(mod.path).as_posix().lower()
-                path_map[rel].append(mod)
+                path_map[rel].append((mod, f))
             except ValueError:
                 pass
 
     conflicts = []
-    for rel, providers in path_map.items():
-        if len(providers) > 1:
-            conflicts.append(FileConflict(
-                rel_path=rel,
-                providers=providers,
-                winner=providers[-1],
-            ))
+    for rel, entries in path_map.items():
+        if len(entries) <= 1:
+            continue
+
+        # If every provider ships byte-identical content, treat it as
+        # a duplicate rather than a meaningful conflict.
+        hashes: set[str] = set()
+        for _, f in entries:
+            try:
+                hashes.add(_sha1(f))
+            except OSError:
+                # If hashing fails, keep the item as a conflict (better to
+                # over-report than silently hide a potentially real issue).
+                hashes.add(f"__io_error__:{f}")
+        if len(hashes) <= 1:
+            continue
+
+        providers = [mod for mod, _ in entries]
+        conflicts.append(FileConflict(
+            rel_path=rel,
+            providers=providers,
+            winner=providers[-1],
+        ))
 
     conflicts.sort(key=lambda c: c.rel_path)
     return conflicts
@@ -69,15 +95,8 @@ def solve_load_order(mods: list[ModInfo]) -> DepGraph:
     for mod in mods:
         valid_deps = [d for d in mod.requires if d in id_set]
         edges[mod.id] = valid_deps
-        in_deg[mod.id] += 0   # ensure key
         for dep in valid_deps:
             rdeps[dep].append(mod.id)
-            in_deg[mod.id] += 1   # wait, this double counts — fix below
-
-    # Reset and recount properly
-    in_deg = {m.id: 0 for m in mods}
-    for mod in mods:
-        for dep in edges.get(mod.id, []):
             in_deg[mod.id] += 1
 
     ready: list[str] = sorted(m.id for m in mods if in_deg[m.id] == 0)

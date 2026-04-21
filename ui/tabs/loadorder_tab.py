@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 from ui.style import COLOR_OK, COLOR_WARN, COLOR_ERROR, COLOR_DIM, COLOR_ACCENT
+from core.modmanager_io import write_modmanager_mods
 
 
 class LoadOrderTab(QWidget):
@@ -97,23 +98,11 @@ class LoadOrderTab(QWidget):
             return
         p = Path(self._zomboid_root) / "Lua" / "modmanager-mods.txt"
         try:
-            current = p.read_text(encoding="utf-8", errors="ignore")
-            # Find the existing semicolon line and replace it
-            lines = current.splitlines()
-            new_mod_line = ";".join(self._ordered_ids)
-            new_lines = []
-            replaced = False
-            for line in lines:
-                if ";" in line and not line.startswith("VERSION"):
-                    new_lines.append(new_mod_line)
-                    replaced = True
-                else:
-                    new_lines.append(line)
-            if not replaced:
-                new_lines.append(new_mod_line)
-            p.write_text("\n".join(new_lines), encoding="utf-8")
+            wr = write_modmanager_mods(p, self._ordered_ids, session_id="loadorder-tab")
             QMessageBox.information(self, "Applied",
-                f"Load order written to:\n{p}\n\nRestart PZ for changes to take effect.")
+                f"Load order written to:\n{p}\n\n"
+                + (f"Backup created: {wr.backup_path.name}\n\n" if wr.backup_path else "")
+                + "Restart PZ for changes to take effect.")
         except Exception as e:
             QMessageBox.critical(self, "Error", str(e))
 

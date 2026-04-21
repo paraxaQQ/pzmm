@@ -4,6 +4,8 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+_RE_PZ_VERSION = re.compile(r'(?<!\d)(4[12](?:\.\d+){0,2})(?!\d)')
+
 
 @dataclass
 class ModInfo:
@@ -40,6 +42,41 @@ def _parse_requires(kv: dict[str, str]) -> list[str]:
     if not raw:
         return []
     return [r.strip() for r in raw.split(",") if r.strip()]
+
+
+def _ver_key(v: str) -> tuple[int, ...]:
+    try:
+        return tuple(int(x) for x in v.split("."))
+    except Exception:
+        return (0,)
+
+
+def _infer_pz_version(mod_info_path: Path, kv: dict[str, str]) -> str:
+    explicit = (kv.get("pzversion", "") or "").strip()
+    if explicit:
+        return explicit
+
+    candidates: set[str] = set()
+
+    # Folder names often include the build marker, e.g. "42.15.2".
+    for part in mod_info_path.parts:
+        for m in _RE_PZ_VERSION.finditer(part):
+            candidates.add(m.group(1))
+
+    # Common versioned subfolder layout: <mod>/42/... or <mod>/42.16/...
+    base = mod_info_path.parent
+    try:
+        for child in base.iterdir():
+            if not child.is_dir():
+                continue
+            for m in _RE_PZ_VERSION.finditer(child.name):
+                candidates.add(m.group(1))
+    except Exception:
+        pass
+
+    if not candidates:
+        return "?"
+    return sorted(candidates, key=_ver_key)[-1]
 
 
 def _find_mod_info_files(root: Path) -> list[Path]:
@@ -106,7 +143,7 @@ def load_workshop_mods(workshop_dirs: list[Path]) -> list[ModInfo]:
                     name=kv.get("name", mod_id),
                     path=best.parent,
                     version=kv.get("modversion", kv.get("version", "?")),
-                    pz_version=kv.get("pzversion", "?"),
+                    pz_version=_infer_pz_version(best, kv),
                     authors=kv.get("authors", kv.get("author", "")),
                     workshop_id=workshop_item.name,
                     source="workshop",
@@ -130,7 +167,7 @@ def load_local_mods(local_dirs: list[Path]) -> list[ModInfo]:
                 name=kv.get("name", mod_id),
                 path=mod_info_path.parent,
                 version=kv.get("modversion", kv.get("version", "?")),
-                pz_version=kv.get("pzversion", "?"),
+                pz_version=_infer_pz_version(mod_info_path, kv),
                 authors=kv.get("authors", kv.get("author", "")),
                 source="local",
                 requires=_parse_requires(kv),

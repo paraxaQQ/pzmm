@@ -16,6 +16,7 @@ build/
 
 # Virtual environments
 .venv/
+.venv-build/
 venv/
 env/
 .env
@@ -34,3 +35,23 @@ desktop.ini
 # Logs
 *.log
 console.txt
+
+# pzmm runtime artifacts (should never end up in the repo)
+config.json
+backups.json
+*.pzmm.bak*
+
+# Claude Code local state
+.claude/
+
+# Test runtime temp folders
+_tmp_test_runs/
+tests/.tmp_tests/
+
+# Local demo/test environments and exported debug bundles
+_worstcase_env/
+pzmm-debug-*.zip
+
+# Icon design artifacts (keep only icon.ico committed)
+icon-*.ico
+icon-preview.png
