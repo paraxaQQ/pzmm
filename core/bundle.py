@@ -51,6 +51,8 @@ def _build_report_text(scan_result: dict) -> str:
         lines.append(f"  {m.name}")
         lines.append(f"    id={m.id}  v={m.version}  pz={m.pz_version}  source={m.source}"
                      + (f"  workshop={m.workshop_id}" if getattr(m, "workshop_id", "") else ""))
+        if getattr(m, "mod_types", None):
+            lines.append(f"    types: {', '.join(m.mod_types)}")
         if getattr(m, "requires", None):
             lines.append(f"    requires: {', '.join(m.requires)}")
     lines.append("")
@@ -157,6 +159,7 @@ def build_bundle(scan_result: dict, out_path: Path) -> tuple[int, int]:
                     "version":  m.version,
                     "pz_version": m.pz_version,
                     "source":   m.source,
+                    "mod_types": list(getattr(m, "mod_types", []) or []),
                 }
                 for m in mods
             ],

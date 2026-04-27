@@ -4,7 +4,8 @@ from pathlib import Path
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit,
     QTableWidget, QTableWidgetItem, QLabel, QHeaderView, QMenu,
-    QPushButton, QCheckBox, QMessageBox, QInputDialog, QFileDialog
+    QPushButton, QCheckBox, QMessageBox, QInputDialog, QFileDialog,
+    QToolButton, QFrame, QSizePolicy
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QAction
@@ -27,6 +28,9 @@ class ModsTab(QWidget):
         self._fc_map:     dict = {}
         self._id_counts:  dict[str, int] = {}
         self._load_order: list[str] = []         # solved load order from scan
+        self._known_types: list[str] = []
+        self._selected_types: set[str] = set()
+        self._type_actions: dict[str, QAction] = {}
         self._zomboid_root: str = ""
         self._local_mods_dirs: list[Path] = []
         self._ai_tab = None
@@ -58,8 +62,34 @@ class ModsTab(QWidget):
         top = QHBoxLayout()
         self._search = QLineEdit()
         self._search.setPlaceholderText("Search mods…")
+        self._search.setMinimumWidth(160)
         self._search.textChanged.connect(self._apply_filters)
-        top.addWidget(self._search)
+        top.addWidget(self._search, stretch=1)
+
+        self._type_filter_btn = QToolButton()
+        self._type_filter_btn.setText("Primary: All")
+        self._type_filter_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self._type_filter_btn.setToolTip(
+            "Filter by the displayed primary type. Turn on Include tags to also match supporting tags."
+        )
+        self._type_menu = QMenu(self)
+        self._type_filter_btn.setMenu(self._type_menu)
+        top.addWidget(self._type_filter_btn)
+
+        self._include_type_tags = QCheckBox("Include tags")
+        self._include_type_tags.setToolTip(
+            "Also match supporting tags such as Textures, Lua, Recipes, and Translations."
+        )
+        self._include_type_tags.toggled.connect(self._on_include_type_tags_changed)
+        top.addWidget(self._include_type_tags)
+
+        self._type_match_all = QCheckBox("Match all")
+        self._type_match_all.setToolTip(
+            "With Include tags on, require every selected type/tag instead of matching any."
+        )
+        self._type_match_all.setEnabled(False)
+        self._type_match_all.toggled.connect(self._on_type_match_mode_changed)
+        top.addWidget(self._type_match_all)
 
         self._active_only = QCheckBox("Active only")
         self._active_only.setChecked(False)
@@ -73,7 +103,7 @@ class ModsTab(QWidget):
         lay.addLayout(top)
 
         # ── Table ────────────────────────────────────────────────────────────
-        cols = ["Active", "Name", "ID", "Source", "PZ Ver", "Errors", "File Conflicts", "Status"]
+        cols = ["Active", "Name", "ID", "Source", "Types", "PZ Ver", "Errors", "File Conflicts", "Status"]
         self._table = QTableWidget(0, len(cols))
         self._table.setHorizontalHeaderLabels(cols)
         hdr = self._table.horizontalHeader()
@@ -89,7 +119,29 @@ class ModsTab(QWidget):
         self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._table.customContextMenuRequested.connect(self._on_context_menu)
         self._table.itemChanged.connect(self._on_item_changed)
-        lay.addWidget(self._table)
+        self._table.currentItemChanged.connect(lambda _cur, _prev: self._refresh_detail())
+        lay.addWidget(self._table, stretch=1)
+
+        self._detail = QFrame()
+        self._detail.setFrameShape(QFrame.Shape.NoFrame)
+        self._detail.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
+        self._detail.setStyleSheet(
+            "QFrame { background: #1c1c22; border: 1px solid #2e2e38; border-radius: 4px; }"
+            "QLabel { background: transparent; }"
+        )
+        dl = QVBoxLayout(self._detail)
+        dl.setContentsMargins(10, 8, 10, 8)
+        dl.setSpacing(4)
+        self._detail_title = QLabel("Select a mod to see details")
+        self._detail_title.setStyleSheet("font-weight: 700; color: #c0c0e0;")
+        self._detail_title.setWordWrap(True)
+        dl.addWidget(self._detail_title)
+        self._detail_body = QLabel("")
+        self._detail_body.setWordWrap(True)
+        self._detail_body.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self._detail_body.setStyleSheet("color: #888899; font-size: 12px;")
+        dl.addWidget(self._detail_body)
+        lay.addWidget(self._detail)
 
         # ── Bottom row: pending changes + apply ──────────────────────────────
         bot = QHBoxLayout()
@@ -121,6 +173,11 @@ class ModsTab(QWidget):
         active_mods = scan_result.get("mods", [])
 
         self._mods = all_mods
+        self._known_types = sorted({
+            t for m in all_mods for t in (getattr(m, "mod_types", None) or ["Unknown"])
+        })
+        self._selected_types.intersection_update(self._known_types)
+        self._rebuild_type_menu()
         self._id_counts = {}
         for m in all_mods:
             self._id_counts[m.id] = self._id_counts.get(m.id, 0) + 1
@@ -157,6 +214,7 @@ class ModsTab(QWidget):
 
         self._refresh_pending_ui()
         self._apply_filters()
+        self._refresh_detail()
 
     def _fill_row(self, row: int, mod, err_map, warn_map):
         is_active = mod.id in self._active_ids
@@ -164,6 +222,11 @@ class ModsTab(QWidget):
         n_err  = err_map.get(mod_key, 0)
         n_warn = warn_map.get(mod_key, 0)
         fc     = self._fc_map.get(mod.id, 0)
+        types = getattr(mod, "mod_types", None) or ["Unknown"]
+        primary_type = types[0] if types else "Unknown"
+        sub_types = [t for t in types[1:] if t != primary_type]
+        types_text = primary_type if not sub_types else f"{primary_type} +{len(sub_types)}"
+        full_types_text = ", ".join(types)
 
         if not is_active:
             status, scol = "INACTIVE", COLOR_DIM
@@ -201,21 +264,29 @@ class ModsTab(QWidget):
                 key = "Local clone"
             name_text = f"{mod.name} [{key}]"
         name_item = self._cell(name_text)
-        name_item.setToolTip(f"{mod.name}\nsource={mod.source}\npath={mod.path}")
+        name_item.setToolTip(f"{mod.name}\nprimary={primary_type}\ntags={full_types_text}\nsource={mod.source}\npath={mod.path}")
         self._table.setItem(row, 1, name_item)
         id_item = self._cell(mod.id, COLOR_DIM)
         id_item.setData(Qt.ItemDataRole.UserRole, str(mod.path))
         id_item.setData(Qt.ItemDataRole.UserRole + 1, mod.source)
         self._table.setItem(row, 2, id_item)
         self._table.setItem(row, 3, self._cell(mod.source, COLOR_DIM))
-        self._table.setItem(row, 4, self._cell(mod.pz_version, COLOR_DIM))
-        self._table.setItem(row, 5, self._cell(
+        type_item = self._cell(types_text, COLOR_ACCENT)
+        type_item.setData(Qt.ItemDataRole.UserRole, types)
+        type_item.setData(Qt.ItemDataRole.UserRole + 1, primary_type)
+        type_item.setToolTip(
+            f"Primary: {primary_type}"
+            + (f"\nTags: {', '.join(sub_types)}" if sub_types else "\nTags: none")
+        )
+        self._table.setItem(row, 4, type_item)
+        self._table.setItem(row, 5, self._cell(mod.pz_version, COLOR_DIM))
+        self._table.setItem(row, 6, self._cell(
             err_str, COLOR_ERROR if n_err else COLOR_DIM, Qt.AlignmentFlag.AlignHCenter
         ))
-        self._table.setItem(row, 6, self._cell(
+        self._table.setItem(row, 7, self._cell(
             fc_str, COLOR_WARN if fc else COLOR_DIM, Qt.AlignmentFlag.AlignHCenter
         ))
-        self._table.setItem(row, 7, self._cell(status, scol, Qt.AlignmentFlag.AlignHCenter))
+        self._table.setItem(row, 8, self._cell(status, scol, Qt.AlignmentFlag.AlignHCenter))
 
     def _cell(self, text: str, color: str | None = None,
               align=Qt.AlignmentFlag.AlignLeft) -> QTableWidgetItem:
@@ -322,6 +393,70 @@ class ModsTab(QWidget):
 
     # ── Filtering ────────────────────────────────────────────────────────────
 
+    def _rebuild_type_menu(self):
+        self._type_menu.clear()
+        self._type_actions.clear()
+
+        all_act = QAction("All primary types", self)
+        all_act.triggered.connect(self._clear_type_filter)
+        self._type_menu.addAction(all_act)
+        if self._known_types:
+            self._type_menu.addSeparator()
+
+        for type_name in self._known_types:
+            act = QAction(type_name, self)
+            act.setCheckable(True)
+            act.setChecked(type_name in self._selected_types)
+            act.toggled.connect(lambda checked, t=type_name: self._on_type_toggled(t, checked))
+            self._type_menu.addAction(act)
+            self._type_actions[type_name] = act
+        self._refresh_type_filter_text()
+
+    def _clear_type_filter(self):
+        if not self._selected_types:
+            return
+        self._selected_types.clear()
+        for act in self._type_actions.values():
+            act.blockSignals(True)
+            act.setChecked(False)
+            act.blockSignals(False)
+        self._refresh_type_filter_text()
+        self._apply_filters()
+
+    def _on_type_toggled(self, type_name: str, checked: bool):
+        if checked:
+            self._selected_types.add(type_name)
+        else:
+            self._selected_types.discard(type_name)
+        self._refresh_type_filter_text()
+        self._apply_filters()
+
+    def _on_type_match_mode_changed(self):
+        self._refresh_type_filter_text()
+        self._apply_filters()
+
+    def _on_include_type_tags_changed(self, enabled: bool):
+        self._type_match_all.setEnabled(enabled)
+        if not enabled and self._type_match_all.isChecked():
+            self._type_match_all.blockSignals(True)
+            self._type_match_all.setChecked(False)
+            self._type_match_all.blockSignals(False)
+        self._refresh_type_filter_text()
+        self._apply_filters()
+
+    def _refresh_type_filter_text(self):
+        if not self._selected_types:
+            self._type_filter_btn.setText("Tags: All" if self._include_type_tags.isChecked() else "Primary: All")
+        elif len(self._selected_types) == 1:
+            prefix = "Tag" if self._include_type_tags.isChecked() else "Primary"
+            self._type_filter_btn.setText(f"{prefix}: {next(iter(self._selected_types))}")
+        else:
+            if self._include_type_tags.isChecked():
+                mode = "all" if self._type_match_all.isChecked() else "any"
+                self._type_filter_btn.setText(f"Tags: {len(self._selected_types)} {mode}")
+            else:
+                self._type_filter_btn.setText(f"Primary: {len(self._selected_types)}")
+
     def _apply_filters(self):
         text = self._search.text().lower()
         active_only = self._active_only.isChecked()
@@ -329,11 +464,24 @@ class ModsTab(QWidget):
         for row in range(self._table.rowCount()):
             name = (self._table.item(row, 1) or QTableWidgetItem("")).text().lower()
             mid  = (self._table.item(row, 2) or QTableWidgetItem("")).text().lower()
+            type_item = self._table.item(row, 4)
+            types = set(type_item.data(Qt.ItemDataRole.UserRole) if type_item else [])
+            primary_type = str(type_item.data(Qt.ItemDataRole.UserRole + 1) if type_item else "")
+            type_text = (type_item.text() if type_item else "").lower()
             chk  = self._table.item(row, 0)
             is_active = bool(chk and chk.checkState() == Qt.CheckState.Checked)
             hide = False
-            if text and text not in name and text not in mid:
+            if text and text not in name and text not in mid and text not in type_text:
                 hide = True
+            if self._selected_types:
+                if not self._include_type_tags.isChecked():
+                    if primary_type not in self._selected_types:
+                        hide = True
+                elif self._type_match_all.isChecked():
+                    if not self._selected_types.issubset(types):
+                        hide = True
+                elif not (types & self._selected_types):
+                    hide = True
             if active_only and not is_active:
                 hide = True
             self._table.setRowHidden(row, hide)
@@ -343,6 +491,48 @@ class ModsTab(QWidget):
         active = sum(1 for r in range(total)
                      if (c := self._table.item(r, 0)) and c.checkState() == Qt.CheckState.Checked)
         self._count_lbl.setText(f"{visible} shown  |  {active} active  |  {total} total")
+        self._refresh_detail()
+
+    def _current_mod(self):
+        row = self._table.currentRow()
+        if row < 0 or self._table.isRowHidden(row):
+            return None
+        id_item = self._table.item(row, 2)
+        src_item = self._table.item(row, 3)
+        if id_item is None:
+            return None
+        mod_id = id_item.text()
+        row_source = src_item.text() if src_item is not None else ""
+        row_path = id_item.data(Qt.ItemDataRole.UserRole) or ""
+        return next(
+            (
+                m for m in self._mods
+                if m.id == mod_id
+                and (not row_source or m.source == row_source)
+                and (not row_path or str(m.path) == str(row_path))
+            ),
+            None,
+        )
+
+    def _refresh_detail(self):
+        mod = self._current_mod()
+        if mod is None:
+            self._detail_title.setText("Select a mod to see details")
+            self._detail_body.setText("")
+            return
+        mod_types = getattr(mod, "mod_types", None) or ["Unknown"]
+        primary_type = mod_types[0] if mod_types else "Unknown"
+        sub_types = [t for t in mod_types[1:] if t != primary_type]
+        tag_text = ", ".join(sub_types) if sub_types else "None"
+        reqs = ", ".join(mod.requires) if getattr(mod, "requires", None) else "None"
+        workshop = mod.workshop_id or "None"
+        self._detail_title.setText(mod.name)
+        self._detail_body.setText(
+            f"Type: {primary_type}  |  Tags: {tag_text}  |  ID: {mod.id}  |  Source: {mod.source}  |  "
+            f"PZ: {mod.pz_version}  |  Workshop: {workshop}\n"
+            f"Requires: {reqs}\n"
+            f"Path: {mod.path}"
+        )
 
     # ── Right-click → context menu ───────────────────────────────────────────
 

@@ -10,6 +10,8 @@ A standalone desktop mod manager for Project Zomboid B42. Scans your active mods
 
 ## What it does
 
+- **NEW: Mod type detection** - tags mods by detected content such as maps, vehicles, weapons, items, clothing, recipes, tiles, textures, Lua, patches, dependencies, and more. Mods can have multiple tags, and the Mods tab can filter/search/sort by them.
+
 - **Error tracking** — parses `console.txt` and maps every Lua error and stack trace back to the mod that caused it. Only shows errors from mods you currently have active. Tracks how many times each error has occurred, confidence level, cause chains, and whether attribution was direct or inferred.
 - **Error diffing** — compare against everything in the current log, what changed since the last scan, or what changed since a baseline you set. Reset the baseline any time for cleaner regression tracking.
 - **File conflict detection** — finds overlapping `.lua`, `.txt`, `.xml`, `.json`, and `.ini` files across mods, shows you which mod wins, and diffs the losing version against the winner so you can see exactly what's being overridden.
@@ -66,6 +68,10 @@ The first thing you see after a scan. Five stat cards at the top show your activ
 ### Mods tab
 
 A searchable table of every mod pzmm found, active or not. Check or uncheck mods to stage changes, then hit **Apply** to write them to disk. Pending changes show as `+X enable -Y disable` at the bottom, and **Undo** rolls them all back. Use the **Active only** checkbox to cut down the list.
+
+The **Types** column shows the primary detected category first, with a compact `+N` count when supporting tags are present. A vehicle mod might show `Vehicles +6` instead of listing every bundled recipe, texture, translation, and Lua file in the table. By default, the type filter matches the displayed primary type only. Turn on **Include tags** to also match supporting tags, and use **Match all** to require every selected type/tag in that expanded mode. The search box also matches type names, and the table can be sorted by the Types column.
+
+Selecting a mod shows a details strip below the table with its detected types, ID, source, PZ version, workshop ID, dependencies, and folder path.
 
 Right-clicking any mod row gives you:
 

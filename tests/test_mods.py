@@ -45,6 +45,38 @@ class ModsTests(unittest.TestCase):
         self.assertEqual(1, len(out))
         self.assertEqual("42.16", out[0].pz_version)
 
+    def test_detects_multiple_mod_types(self):
+        root = self._tmp_dir()
+        mod_dir = root / "KitchenSink"
+        scripts = mod_dir / "media" / "scripts"
+        maps = mod_dir / "media" / "maps" / "NewTown"
+        vehicles = mod_dir / "media" / "scripts" / "vehicles"
+        scripts.mkdir(parents=True, exist_ok=True)
+        maps.mkdir(parents=True, exist_ok=True)
+        vehicles.mkdir(parents=True, exist_ok=True)
+        (mod_dir / "mod.info").write_text("id=KitchenSink\nname=Kitchen Sink\n", encoding="utf-8")
+        (maps / "map.info").write_text("title=NewTown\n", encoding="utf-8")
+        (scripts / "weapons.txt").write_text(
+            "module Base { item TestRifle { Type = Weapon, DisplayCategory = Weapon, } }",
+            encoding="utf-8",
+        )
+        (vehicles / "cars.txt").write_text("module Vehicles { vehicle TestCar { } }", encoding="utf-8")
+
+        out = mods.load_local_mods([root])
+        self.assertEqual(1, len(out))
+        self.assertIn("Maps", out[0].mod_types)
+        self.assertIn("Weapons", out[0].mod_types)
+        self.assertIn("Vehicles", out[0].mod_types)
+
+    def test_unknown_when_no_media_signals(self):
+        root = self._tmp_dir()
+        mod_dir = root / "Emptyish"
+        mod_dir.mkdir(parents=True, exist_ok=True)
+        (mod_dir / "mod.info").write_text("id=Emptyish\nname=Emptyish\n", encoding="utf-8")
+
+        out = mods.load_local_mods([root])
+        self.assertEqual(["Unknown"], out[0].mod_types)
+
 
 if __name__ == "__main__":
     unittest.main()

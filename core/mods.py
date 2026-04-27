@@ -19,6 +19,7 @@ class ModInfo:
     source: str = "workshop"   # "workshop" | "local"
     requires: list[str] = field(default_factory=list)
     issues: list[str] = field(default_factory=list)
+    mod_types: list[str] = field(default_factory=list)
 
 
 def _parse_mod_info(mod_info_path: Path) -> dict[str, str]:
@@ -42,6 +43,106 @@ def _parse_requires(kv: dict[str, str]) -> list[str]:
     if not raw:
         return []
     return [r.strip() for r in raw.split(",") if r.strip()]
+
+
+def _read_small_text(path: Path, limit: int = 256_000) -> str:
+    try:
+        with path.open("rb") as f:
+            data = f.read(limit)
+        return data.decode("utf-8", errors="ignore").lower()
+    except Exception:
+        return ""
+
+
+def detect_mod_types(mod_root: Path, kv: dict[str, str] | None = None) -> list[str]:
+    """
+    Best-effort PZ mod content tags for GUI filtering.
+
+    This intentionally returns multiple tags because real mods often bundle maps,
+    scripts, Lua, tiles, sounds, and compatibility patches together.
+    """
+    tags: set[str] = set()
+    kv = kv or {}
+    name_blob = " ".join(
+        str(v).lower() for v in (
+            kv.get("id", ""),
+            kv.get("name", ""),
+            kv.get("description", ""),
+        )
+    )
+    if any(word in name_blob for word in ("compat", "compatibility", "patch", "fix")):
+        tags.add("Patch")
+    if any(word in name_blob for word in ("api", "core", "dependency", "framework", "library", "required")):
+        tags.add("Dependency")
+
+    media = mod_root / "media"
+    if not media.exists():
+        return ["Dependency"] if "Dependency" in tags else ["Unknown"]
+
+    script_text_parts: list[str] = []
+    lua_text_parts: list[str] = []
+
+    for path in media.rglob("*"):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(media).as_posix().lower()
+        suffix = path.suffix.lower()
+
+        if rel.startswith("maps/"):
+            tags.add("Maps")
+        if rel.startswith("texturepacks/") or "tiledefinitions" in rel:
+            tags.add("Tiles")
+        if rel.startswith(("textures/", "models_x/", "models/")) or suffix in {".png", ".dds"}:
+            if path.name.lower() != "poster.png":
+                tags.add("Textures")
+        if rel.startswith(("scripts/vehicles/", "scripts/vehicle")):
+            tags.add("Vehicles")
+        if rel.startswith(("clothing/", "scripts/clothing/")):
+            tags.add("Clothing")
+        if rel.startswith(("sound/", "sounds/", "fmod/")) or suffix in {".bank", ".ogg", ".wav"}:
+            tags.add("Sounds")
+        if rel.startswith(("ui/", "lua/client/ui/")):
+            tags.add("UI")
+        if rel.startswith(("anims/", "animsets/", "actiongroups/")):
+            tags.add("Animations")
+        if rel.startswith("lua/shared/translate/") or "/translate/" in rel:
+            tags.add("Translations")
+        if rel.startswith("lua/"):
+            tags.add("Lua")
+            if suffix == ".lua" and len(lua_text_parts) < 60:
+                lua_text_parts.append(_read_small_text(path, 64_000))
+        if rel.startswith("scripts/") and suffix in {".txt", ".xml"} and len(script_text_parts) < 80:
+            script_text_parts.append(_read_small_text(path, 96_000))
+
+    script_blob = "\n".join(script_text_parts)
+    lua_blob = "\n".join(lua_text_parts)
+
+    if " type = weapon" in script_blob or "displaycategory = weapon" in script_blob:
+        tags.add("Weapons")
+    if " vehicle " in script_blob or "module vehicles" in script_blob:
+        tags.add("Vehicles")
+    if "item " in script_blob:
+        tags.add("Items")
+    if "recipe " in script_blob or " evolvedrecipe " in script_blob:
+        tags.add("Recipes")
+    if "bodylocation" in script_blob or "clothingitem" in script_blob:
+        tags.add("Clothing")
+    if "traitfactory.addtrait" in lua_blob:
+        tags.add("Traits")
+    if "professionfactory.addprofession" in lua_blob:
+        tags.add("Professions")
+
+    if not tags and kv.get("require") and not script_blob:
+        tags.add("Framework")
+
+    preferred = [
+        "Maps", "Vehicles", "Weapons", "Items", "Clothing", "Traits",
+        "Professions", "Recipes", "Tiles", "Textures", "Sounds",
+        "Animations", "UI", "Translations", "Lua", "Patch", "Dependency",
+        "Framework",
+    ]
+    ordered = [tag for tag in preferred if tag in tags]
+    return ordered or ["Unknown"]
 
 
 def _ver_key(v: str) -> tuple[int, ...]:
@@ -148,6 +249,7 @@ def load_workshop_mods(workshop_dirs: list[Path]) -> list[ModInfo]:
                     workshop_id=workshop_item.name,
                     source="workshop",
                     requires=_parse_requires(kv),
+                    mod_types=detect_mod_types(best.parent, kv),
                 ))
     return mods
 
@@ -171,6 +273,7 @@ def load_local_mods(local_dirs: list[Path]) -> list[ModInfo]:
                 authors=kv.get("authors", kv.get("author", "")),
                 source="local",
                 requires=_parse_requires(kv),
+                mod_types=detect_mod_types(mod_info_path.parent, kv),
             ))
     return mods
 

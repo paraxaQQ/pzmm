@@ -4,8 +4,8 @@ from pathlib import Path
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QSplitter,
     QListWidget, QListWidgetItem, QTreeWidget, QTreeWidgetItem, QLabel,
-    QTextEdit, QLineEdit, QHeaderView, QMenu, QSizePolicy, QHBoxLayout, QPushButton,
-    QComboBox,
+    QTextEdit, QLineEdit, QHeaderView, QMenu, QSizePolicy, QPushButton,
+    QComboBox, QGridLayout,
     QMessageBox
 )
 from PyQt6.QtCore import Qt
@@ -50,10 +50,14 @@ class ErrorsTab(QWidget):
         lay.setSpacing(10)
 
         self._search = QLineEdit()
-        self._search.setPlaceholderText("Filter mods…")
+        self._search.setPlaceholderText("Filter mods...")
+        self._search.setMinimumWidth(160)
         self._search.textChanged.connect(self._filter)
 
         self._diff_mode = QComboBox()
+        self._diff_mode.setMinimumWidth(220)
+        self._diff_mode.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        self._diff_mode.setMaxVisibleItems(10)
         self._diff_mode.addItem("Everything in current log", "all")
         self._diff_mode.addItem("Changed since previous scan", "since_last")
         self._diff_mode.addItem("Changed since baseline", "since_startup")
@@ -77,13 +81,15 @@ class ErrorsTab(QWidget):
         )
         self._reset_baseline_btn.clicked.connect(self._reset_baseline)
 
-        top = QHBoxLayout()
-        top.setSpacing(8)
-        top.addWidget(self._search, stretch=1)
-        top.addWidget(self._diff_mode)
-        top.addWidget(self._reset_baseline_btn)
-        top.addWidget(self._send_diff_btn)
-        top.addWidget(self._help_btn)
+        top = QGridLayout()
+        top.setHorizontalSpacing(8)
+        top.setVerticalSpacing(6)
+        top.addWidget(self._search, 0, 0)
+        top.addWidget(self._diff_mode, 0, 1)
+        top.addWidget(self._reset_baseline_btn, 1, 1)
+        top.addWidget(self._send_diff_btn, 1, 2)
+        top.addWidget(self._help_btn, 1, 3)
+        top.setColumnStretch(0, 1)
         lay.addLayout(top)
 
         self._session_note = QLabel(
@@ -115,6 +121,7 @@ class ErrorsTab(QWidget):
         ll.setContentsMargins(0, 0, 0, 0)
         ll.setSpacing(4)
         self._mod_list = QListWidget()
+        self._mod_list.setMinimumWidth(180)
         self._mod_list.currentRowChanged.connect(self._on_mod_select)
         ll.addWidget(self._mod_list)
         h_split.addWidget(left)
@@ -128,19 +135,23 @@ class ErrorsTab(QWidget):
         v_split = QSplitter(Qt.Orientation.Vertical)
 
         self._detail = QTreeWidget()
+        self._detail.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self._detail.setHeaderLabels(
             ["Message / Stack", "Severity", "Confidence", "Why", "Cause", "File", "Line"]
         )
         self._detail.setAlternatingRowColors(True)
-        self._detail.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self._detail.header().setMinimumSectionSize(70)
+        self._detail.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
         self._detail.header().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         self._detail.header().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         self._detail.header().setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
         self._detail.header().setSectionResizeMode(4, QHeaderView.ResizeMode.Interactive)
-        self._detail.header().setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
+        self._detail.header().setSectionResizeMode(5, QHeaderView.ResizeMode.Interactive)
         self._detail.header().setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
+        self._detail.header().resizeSection(0, 360)
         self._detail.header().resizeSection(3, 300)
         self._detail.header().resizeSection(4, 280)
+        self._detail.header().resizeSection(5, 220)
         self._detail.currentItemChanged.connect(self._on_item_select)
         self._detail.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._detail.customContextMenuRequested.connect(self._on_context_menu)
@@ -159,6 +170,8 @@ class ErrorsTab(QWidget):
         v_split.setSizes([300, 180])
         rl.addWidget(v_split)
         h_split.addWidget(right)
+        h_split.setStretchFactor(0, 0)
+        h_split.setStretchFactor(1, 1)
 
         h_split.setSizes([300, 640])
         lay.addWidget(h_split)
@@ -304,13 +317,13 @@ class ErrorsTab(QWidget):
                 root.setToolTip(4, cause_chain)
 
             for s in e.stack:
+                if not str(s).strip():
+                    continue
                 child = QTreeWidgetItem([s, "", "", "", "", "", ""])
                 child.setForeground(0, QColor(COLOR_DIM))
                 root.addChild(child)
 
             self._detail.addTopLevelItem(root)
-            if e.stack:
-                root.setExpanded(True)
 
     # ── tree item clicked → show full text ────────────────────────────────────
 

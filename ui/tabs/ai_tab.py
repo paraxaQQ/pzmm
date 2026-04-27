@@ -163,7 +163,8 @@ class AITab(QWidget):
         convo_row.addWidget(convo_lbl)
 
         self._convo_combo = QComboBox()
-        self._convo_combo.setMinimumWidth(320)
+        self._convo_combo.setMinimumWidth(160)
+        self._convo_combo.setMaxVisibleItems(10)
         self._convo_combo.currentIndexChanged.connect(self._on_conversation_changed)
         convo_row.addWidget(self._convo_combo)
 

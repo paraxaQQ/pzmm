@@ -5,10 +5,10 @@ import webbrowser
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QTabWidget, QStatusBar,
-    QProgressBar, QApplication, QMessageBox
+    QProgressBar, QApplication, QMessageBox, QSizePolicy
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QFileSystemWatcher
-from PyQt6.QtGui import QFont, QIcon
+from PyQt6.QtGui import QFont, QIcon, QFontMetrics
 
 from ui import style
 from ui.tabs.overview      import OverviewTab
@@ -25,6 +25,34 @@ from core import updates as updates_mod
 from core import config as config_mod
 from core import profiles as profiles_mod
 from core import error_diff as error_diff_mod
+
+
+class ElidedLabel(QLabel):
+    """Single-line label that never paints outside its allocated width."""
+
+    def __init__(self, text: str = "", parent=None):
+        super().__init__(parent)
+        self._full_text = text
+        self.setText(text)
+
+    def setText(self, text: str):
+        self._full_text = text
+        self.setToolTip(text)
+        super().setText(self._elided_text())
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        super().setText(self._elided_text())
+
+    def _elided_text(self) -> str:
+        if not self._full_text:
+            return ""
+        metrics = QFontMetrics(self.font())
+        return metrics.elidedText(
+            self._full_text,
+            Qt.TextElideMode.ElideMiddle,
+            max(20, self.width()),
+        )
 
 
 class UpdateCheckWorker(QThread):
@@ -96,7 +124,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle(f"PZ Mod Manager — v{PZMM_VERSION}")
         self.resize(1280, 780)
-        self.setMinimumSize(900, 600)
+        self.setMinimumSize(760, 520)
         self._worker: ScanWorker | None = None
         self._last_scan: dict | None = None
         self._startup_baseline_report = None
@@ -153,11 +181,12 @@ class MainWindow(QMainWindow):
         title = QLabel("PZ Mod Manager")
         title.setObjectName("appTitle")
         tl.addWidget(title)
-        tl.addStretch()
 
-        self._path_lbl = QLabel("Paths: detecting…")
+        self._path_lbl = ElidedLabel("Paths: detecting...")
         self._path_lbl.setObjectName("pathLabel")
-        tl.addWidget(self._path_lbl)
+        self._path_lbl.setMinimumWidth(0)
+        self._path_lbl.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        tl.addWidget(self._path_lbl, stretch=1)
 
         self._update_pill = QPushButton("")
         self._update_pill.setObjectName("updatePill")
@@ -233,12 +262,20 @@ class MainWindow(QMainWindow):
     def _detect_paths(self):
         ws = steam.find_pz_workshop_dirs()
         lc = steam.find_local_mods_dirs()
-        parts = []
+        full_parts = []
+        summary = []
         if ws:
-            parts.append(f"Workshop: {ws[0]}")
+            full_parts.append(f"Workshop: {ws[0]}")
+            summary.append("Workshop")
         if lc:
-            parts.append(f"Local: {lc[0]}")
-        self._path_lbl.setText("  |  ".join(parts) if parts else "PZ not found")
+            full_parts.append(f"Local: {lc[0]}")
+            summary.append("Local")
+        if full_parts:
+            self._path_lbl.setText(f"Paths: {' + '.join(summary)}")
+            self._path_lbl.setToolTip("\n".join(full_parts))
+        else:
+            self._path_lbl.setText("PZ not found")
+            self._path_lbl.setToolTip("Project Zomboid paths were not detected.")
 
     def _start_scan(self):
         if self._worker and self._worker.isRunning():

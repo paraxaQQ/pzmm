@@ -67,8 +67,8 @@ class SettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Settings")
-        self.setMinimumWidth(640)
-        self.setMinimumHeight(700)
+        self.setMinimumSize(520, 460)
+        self.resize(680, 700)
         self._cfg = config.load()
         self._orig_theme = self._cfg.color_theme or "midnight"
         self._initial_state: dict[str, object] = {}
@@ -194,6 +194,7 @@ class SettingsDialog(QDialog):
         form.setSpacing(10)
 
         self._provider = QComboBox()
+        self._provider.setMaxVisibleItems(10)
         self._provider.addItems(["Anthropic (Claude)", "OpenAI (GPT)"])
         self._provider.setCurrentIndex(0 if self._cfg.provider == "anthropic" else 1)
         self._provider.currentIndexChanged.connect(self._on_provider_change)
@@ -212,6 +213,7 @@ class SettingsDialog(QDialog):
         form.addRow(self._openai_key_label, self._openai_key)
 
         self._anthropic_model = QComboBox()
+        self._anthropic_model.setMaxVisibleItems(10)
         self._anthropic_model.setEditable(True)
         self._anthropic_model.addItems(ANTHROPIC_MODELS)
         if self._cfg.anthropic_model not in ANTHROPIC_MODELS:
@@ -221,6 +223,7 @@ class SettingsDialog(QDialog):
         form.addRow(self._anthropic_model_label, self._anthropic_model)
 
         self._openai_model = QComboBox()
+        self._openai_model.setMaxVisibleItems(10)
         self._openai_model.setEditable(True)
         self._openai_model.addItems(OPENAI_MODELS)
         if self._cfg.openai_model not in OPENAI_MODELS:
@@ -316,6 +319,7 @@ class SettingsDialog(QDialog):
         appearance_layout.setSpacing(10)
 
         self._theme = NoWheelComboBox()
+        self._theme.setMaxVisibleItems(10)
         for label, key in style.THEME_OPTIONS:
             self._theme.addItem(label, key)
         idx = self._theme.findData(self._cfg.color_theme)

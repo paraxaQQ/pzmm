@@ -22,8 +22,8 @@ class VersionPortDialog(QDialog):
     def __init__(self, *, mod_name: str, mod_root: Path, versions: list[str], parent=None):
         super().__init__(parent)
         self.setWindowTitle("Port Version Folder")
-        self.setMinimumWidth(620)
-        self.setMinimumHeight(520)
+        self.setMinimumSize(500, 420)
+        self.resize(620, 520)
         self._mod_name = mod_name
         self._mod_root = mod_root
         self._versions = versions
@@ -46,6 +46,7 @@ class VersionPortDialog(QDialog):
         form = QFormLayout()
         form.setSpacing(8)
         self._from_combo = QComboBox()
+        self._from_combo.setMaxVisibleItems(10)
         self._from_combo.addItems(self._versions)
         if self._versions:
             self._from_combo.setCurrentIndex(len(self._versions) - 1)
@@ -53,6 +54,7 @@ class VersionPortDialog(QDialog):
         form.addRow("From folder:", self._from_combo)
 
         self._to_combo = QComboBox()
+        self._to_combo.setMaxVisibleItems(10)
         self._to_combo.setEditable(True)
         self._to_combo.addItems(self._versions)
         if self._versions:
