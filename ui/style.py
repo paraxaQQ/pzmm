@@ -220,6 +220,11 @@ QLineEdit {
 QLineEdit:focus {
     border-color: #5a8fff;
 }
+QLineEdit#readOnlyUrl {
+    background: #1b1b22;
+    color: #77778a;
+    border-color: #2e2e38;
+}
 QComboBox {
     background: #22222e;
     border: 1px solid #3a3a50;

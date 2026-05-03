@@ -13,6 +13,7 @@ from PyQt6.QtGui import QFont, QIcon, QFontMetrics
 from ui import style
 from ui.tabs.overview      import OverviewTab
 from ui.tabs.mods_tab      import ModsTab
+from ui.tabs.workshop_tab  import WorkshopTab
 from ui.tabs.conflicts_tab import ConflictsTab
 from ui.tabs.loadorder_tab import LoadOrderTab
 from ui.tabs.errors_tab    import ErrorsTab
@@ -140,7 +141,11 @@ class MainWindow(QMainWindow):
         idx = self._tabs.indexOf(self._tab_ai)
         if enabled:
             if idx < 0:
-                self._tabs.addTab(self._tab_ai, "AI Assistant")
+                workshop_idx = self._tabs.indexOf(self._tab_workshop)
+                if workshop_idx >= 0:
+                    self._tabs.insertTab(workshop_idx, self._tab_ai, "AI Assistant")
+                else:
+                    self._tabs.addTab(self._tab_ai, "AI Assistant")
             return
 
         if idx >= 0:
@@ -220,6 +225,7 @@ class MainWindow(QMainWindow):
         self._tabs = QTabWidget()
         self._tab_overview  = OverviewTab()
         self._tab_mods      = ModsTab()
+        self._tab_workshop  = WorkshopTab()
         self._tab_conflicts = ConflictsTab()
         self._tab_loadorder = LoadOrderTab()
         self._tab_errors    = ErrorsTab()
@@ -231,6 +237,7 @@ class MainWindow(QMainWindow):
         self._tab_mods.set_ai_tab(self._tab_ai, self._tabs)
         self._tab_mods.set_conflicts_tab(self._tab_conflicts)
         self._tab_mods.set_rescan_handler(self._start_scan)
+        self._tab_workshop.set_rescan_handler(self._start_scan)
 
         self._tabs.addTab(self._tab_overview,  "Overview")
         self._tabs.addTab(self._tab_mods,      "Mods")
@@ -238,6 +245,7 @@ class MainWindow(QMainWindow):
         self._tabs.addTab(self._tab_loadorder, "Load Order")
         self._tabs.addTab(self._tab_errors,    "Errors")
         self._tabs.addTab(self._tab_ai,        "AI Assistant")
+        self._tabs.addTab(self._tab_workshop,  "Workshop")
         self._tabs.currentChanged.connect(self._on_tab_changed)
         self._apply_runtime_settings(refresh_watch=False)
 

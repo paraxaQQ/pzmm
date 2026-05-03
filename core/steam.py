@@ -1,6 +1,8 @@
 """Steam library and PZ path detection."""
 import os
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 try:
@@ -76,3 +78,37 @@ def find_zomboid_root() -> Path | None:
         if p.exists():
             return p
     return None
+
+
+def is_steam_running() -> bool:
+    """Best-effort Steam client process detection."""
+    try:
+        if os.name == "nt":
+            result = subprocess.run(
+                ["tasklist", "/FI", "IMAGENAME eq steam.exe"],
+                capture_output=True,
+                text=True,
+                timeout=3,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            return "steam.exe" in (result.stdout or "").lower()
+
+        if shutil.which("pgrep"):
+            result = subprocess.run(
+                ["pgrep", "-x", "steam"],
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+            if result.returncode == 0:
+                return True
+            result = subprocess.run(
+                ["pgrep", "-f", "Steam"],
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+            return result.returncode == 0
+    except Exception:
+        return False
+    return False

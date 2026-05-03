@@ -23,43 +23,44 @@ class NoWheelComboBox(QComboBox):
 
 
 ANTHROPIC_MODELS = [
-    # Claude 4.6 (latest)
-    "claude-opus-4-6",
+    # Current Claude models
+    "claude-opus-4-7",
     "claude-sonnet-4-6",
-    "claude-haiku-4-5-20251001",
-    # Claude 4.5
-    "claude-opus-4-5",
-    "claude-sonnet-4-5",
     "claude-haiku-4-5",
-    # Claude 3.5
-    "claude-3-5-sonnet-latest",
-    "claude-3-5-haiku-latest",
-    # Claude 3
-    "claude-3-opus-latest",
+    "claude-haiku-4-5-20251001",
+    # Recent legacy models kept for existing accounts/configs
+    "claude-opus-4-6",
+    "claude-sonnet-4-5",
+    "claude-opus-4-1-20250805",
+    "claude-opus-4-20250514",
+    "claude-sonnet-4-20250514",
+    "claude-3-5-haiku-20241022",
 ]
 
 OPENAI_MODELS = [
-    # GPT-5 family
+    # Chat Completions-compatible GPT models
+    "gpt-5.2",
+    "gpt-5.2-chat-latest",
+    "gpt-5.1",
+    "gpt-5.1-chat-latest",
     "gpt-5",
+    "gpt-5-chat-latest",
     "gpt-5-mini",
     "gpt-5-nano",
-    # GPT-4.1 family
+    # GPT-4.1 and GPT-4o families
     "gpt-4.1",
     "gpt-4.1-mini",
     "gpt-4.1-nano",
-    # GPT-4o family
     "gpt-4o",
     "gpt-4o-mini",
-    # o-series reasoning
+    # Recent reasoning models
     "o4-mini",
     "o3",
     "o3-mini",
-    "o1",
-    "o1-mini",
     "o1-pro",
-    # Older but still around
+    "o1",
+    # Older but still available on many projects
     "gpt-4-turbo",
-    "gpt-3.5-turbo",
 ]
 
 

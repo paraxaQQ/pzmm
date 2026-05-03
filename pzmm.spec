@@ -16,6 +16,8 @@ a = Analysis(
         'PyQt6.QtCore',
         'PyQt6.QtGui',
         'PyQt6.QtWidgets',
+        'PyQt6.QtWebEngineCore',
+        'PyQt6.QtWebEngineWidgets',
         # AI providers — dynamically imported in core/ai.py
         'anthropic',
         'openai',

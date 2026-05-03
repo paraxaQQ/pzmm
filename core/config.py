@@ -23,8 +23,8 @@ class Config:
     provider: str = "anthropic"                 # "anthropic" | "openai"
     anthropic_key: str = ""
     openai_key: str = ""
-    anthropic_model: str = "claude-sonnet-4-5"
-    openai_model: str = "gpt-4o"
+    anthropic_model: str = "claude-sonnet-4-6"
+    openai_model: str = "gpt-5.2"
     system_prompt: str = (
         "You are an expert Project Zomboid modder helping debug and fix B42 mods. "
         "You know the Lua API, the B41->B42 breaking changes (getClassFieldVal signature, "
