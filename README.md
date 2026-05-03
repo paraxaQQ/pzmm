@@ -10,8 +10,9 @@ A standalone desktop mod manager for Project Zomboid B42. Scans your active mods
 
 ## What it does
 
-- **NEW: Mod type detection** - tags mods by detected content such as maps, vehicles, weapons, items, clothing, recipes, tiles, textures, Lua, patches, dependencies, and more. Mods can have multiple tags, and the Mods tab can filter/search/sort by them.
+- **NEW!** **Built-in browser for PZ Steam Workshop!** - A built in browser tab under "Workshop" in the UI which allows you to sign-in to steam, browse, and install workshop mods all from 1 application! **pzmm does NOT save any cookies or sign-in credentials.**
 
+- **Mod type detection** - tags mods by detected content such as maps, vehicles, weapons, items, clothing, recipes, tiles, textures, Lua, patches, dependencies, and more. Mods can have multiple tags, and the Mods tab can filter/search/sort by them.
 - **Error tracking** — parses `console.txt` and maps every Lua error and stack trace back to the mod that caused it. Only shows errors from mods you currently have active. Tracks how many times each error has occurred, confidence level, cause chains, and whether attribution was direct or inferred.
 - **Error diffing** — compare against everything in the current log, what changed since the last scan, or what changed since a baseline you set. Reset the baseline any time for cleaner regression tracking.
 - **File conflict detection** — finds overlapping `.lua`, `.txt`, `.xml`, `.json`, and `.ini` files across mods, shows you which mod wins, and diffs the losing version against the winner so you can see exactly what's being overridden.
