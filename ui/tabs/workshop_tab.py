@@ -42,11 +42,21 @@ def _is_allowed_top_level_url(url: QUrl) -> bool:
     return host in STEAM_TOP_LEVEL_HOSTS or host.endswith(".steamcommunity.com")
 
 
+def _is_steam_client_url(url: QUrl) -> bool:
+    return (url.scheme() or "").lower() == "steam"
+
+
 if _HAS_WEBENGINE:
     class WorkshopPage(QWebEnginePage):
         blockedNavigation = pyqtSignal(str)
 
         def acceptNavigationRequest(self, url, nav_type, is_main_frame):
+            if is_main_frame and _is_steam_client_url(url):
+                try:
+                    webbrowser.open(url.toString())
+                except Exception:
+                    self.blockedNavigation.emit(url.toString())
+                return False
             if is_main_frame and not _is_allowed_top_level_url(url):
                 self.blockedNavigation.emit(url.toString())
                 return False
