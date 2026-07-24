@@ -38,6 +38,9 @@ class Config:
     protect_game_data: bool = True                # refuse writes under Saves/ActiveMods/Sandbox Presets
     external_editor: str = ""                      # exe path for "open in editor"; "" = auto-detect
     auto_scan_on_launch: bool = False              # run Scan on startup
+    virus_scanning_enabled: bool = False           # heuristic on-manager scanner
+    virus_scan_mode: str = "manual"               # "startup" | "download" | "manual"
+    virus_scan_policy: str = "block"              # "warn" | "block"
     watch_console: bool = True                     # live-refresh Errors when console.txt changes
     color_theme: str = "midnight"                  # ui.style theme key
     last_update_check_ts: float = 0.0             # UTC epoch of last GitHub release ping

@@ -13,6 +13,7 @@ from PyQt6.QtGui import QFont, QIcon, QFontMetrics
 from ui import style
 from ui.tabs.overview      import OverviewTab
 from ui.tabs.mods_tab      import ModsTab
+from ui.tabs.mod_security_tab import ModSecurityTab
 from ui.tabs.workshop_tab  import WorkshopTab
 from ui.tabs.conflicts_tab import ConflictsTab
 from ui.tabs.loadorder_tab import LoadOrderTab
@@ -24,6 +25,7 @@ from ui.profiles_dialog     import ProfilesDialog
 from core import steam, mods as mods_mod, scanner, inspector, __version__ as PZMM_VERSION
 from core import updates as updates_mod
 from core import config as config_mod
+from core import virus_scanner
 from core import profiles as profiles_mod
 from core import error_diff as error_diff_mod
 
@@ -71,8 +73,13 @@ class ScanWorker(QThread):
     finished = pyqtSignal(dict)
     error    = pyqtSignal(str)
 
+    def __init__(self, trigger: str = "manual"):
+        super().__init__()
+        self._trigger = trigger
+
     def run(self):
         try:
+            cfg = config_mod.load()
             self.progress.emit("Detecting Steam libraries…")
             workshop_dirs = steam.find_pz_workshop_dirs()
             local_dirs    = steam.find_local_mods_dirs()
@@ -105,16 +112,63 @@ class ScanWorker(QThread):
             console_path = (zomboid_root / "console.txt") if zomboid_root else None
             report, _ = inspector.run_inspection(active, console_path)
 
+            if cfg.virus_scanning_enabled:
+                do_virus_scan = (
+                    self._trigger == "manual"
+                    or cfg.virus_scan_mode == self._trigger
+                )
+            else:
+                do_virus_scan = False
+            virus_results: dict[str, virus_scanner.VirusScanResult] = {}
+            if do_virus_scan:
+                self.progress.emit("Scanning workshop mods for suspicious activity…")
+                virus_results = virus_scanner.scan_mods(
+                    all_mods,
+                    include_sources={"workshop"},
+                    include_non_workshop=False,
+                )
+
             self.finished.emit({
                 "mods":           active,
                 "all_mods":       all_mods,
                 "file_conflicts": file_conflicts,
                 "dep_graph":      dep_graph,
                 "console_report": report,
+                "virus_scan_results": virus_results,
+                "virus_scanner_enabled": do_virus_scan,
+                "virus_scan_mode": cfg.virus_scan_mode,
+                "virus_scan_policy": cfg.virus_scan_policy,
                 "workshop_dirs":  [str(d) for d in workshop_dirs],
                 "local_dirs":     [str(d) for d in local_dirs],
                 "zomboid_root":   str(zomboid_root) if zomboid_root else "Not found",
             })
+        except Exception:
+            import traceback
+            self.error.emit(traceback.format_exc())
+
+
+class VirusScanWorker(QThread):
+    progress = pyqtSignal(str)
+    finished = pyqtSignal(dict)
+    error = pyqtSignal(str)
+
+    def __init__(self, mods: list, force: bool = False):
+        super().__init__()
+        self._mods = mods
+        self._force = force
+
+    def run(self):
+        try:
+            if not self._mods:
+                self.finished.emit({})
+                return
+            self.progress.emit("Scanning selected mod(s) for suspicious files…")
+            result = virus_scanner.scan_mods(
+                self._mods,
+                force=self._force,
+                include_non_workshop=True,
+            )
+            self.finished.emit(result)
         except Exception:
             import traceback
             self.error.emit(traceback.format_exc())
@@ -127,6 +181,7 @@ class MainWindow(QMainWindow):
         self.resize(1280, 780)
         self.setMinimumSize(760, 520)
         self._worker: ScanWorker | None = None
+        self._virus_worker: VirusScanWorker | None = None
         self._last_scan: dict | None = None
         self._startup_baseline_report = None
         self._console_watcher: QFileSystemWatcher | None = None
@@ -225,6 +280,7 @@ class MainWindow(QMainWindow):
         self._tabs = QTabWidget()
         self._tab_overview  = OverviewTab()
         self._tab_mods      = ModsTab()
+        self._tab_mod_security = ModSecurityTab()
         self._tab_workshop  = WorkshopTab()
         self._tab_conflicts = ConflictsTab()
         self._tab_loadorder = LoadOrderTab()
@@ -237,10 +293,11 @@ class MainWindow(QMainWindow):
         self._tab_mods.set_ai_tab(self._tab_ai, self._tabs)
         self._tab_mods.set_conflicts_tab(self._tab_conflicts)
         self._tab_mods.set_rescan_handler(self._start_scan)
-        self._tab_workshop.set_rescan_handler(self._start_scan)
-
-        self._tabs.addTab(self._tab_overview,  "Overview")
+        self._tab_mods.set_virus_scan_handler(self._scan_selected_mods)
+        self._tab_workshop.set_rescan_handler(lambda: self._start_scan("download"))
         self._tabs.addTab(self._tab_mods,      "Mods")
+        self._tabs.addTab(self._tab_mod_security, "Mod Security")
+        self._tabs.addTab(self._tab_overview,  "Overview")
         self._tabs.addTab(self._tab_conflicts, "Conflicts")
         self._tabs.addTab(self._tab_loadorder, "Load Order")
         self._tabs.addTab(self._tab_errors,    "Errors")
@@ -285,17 +342,33 @@ class MainWindow(QMainWindow):
             self._path_lbl.setText("PZ not found")
             self._path_lbl.setToolTip("Project Zomboid paths were not detected.")
 
-    def _start_scan(self):
+    def _start_scan(self, trigger: str = "manual"):
+        if self._virus_worker and self._virus_worker.isRunning():
+            return
         if self._worker and self._worker.isRunning():
             return
         self._scan_btn.setEnabled(False)
         self._progress.setVisible(True)
         self._status.showMessage("Scanning…")
-        self._worker = ScanWorker()
+        self._worker = ScanWorker(trigger)
         self._worker.progress.connect(self._on_progress)
         self._worker.finished.connect(self._on_finished)
         self._worker.error.connect(self._on_error)
         self._worker.start()
+
+    def _scan_selected_mods(self, mods: list):
+        if self._virus_worker and self._virus_worker.isRunning():
+            return
+        if not mods:
+            return
+        self._scan_btn.setEnabled(False)
+        self._progress.setVisible(True)
+        self._status.showMessage("Scanning selected mod(s) for threats…")
+        self._virus_worker = VirusScanWorker(mods, force=True)
+        self._virus_worker.progress.connect(self._on_progress)
+        self._virus_worker.finished.connect(self._on_virus_scan_finished)
+        self._virus_worker.error.connect(self._on_virus_scan_error)
+        self._virus_worker.start()
 
     def _on_progress(self, msg: str):
         self._status.showMessage(msg)
@@ -312,6 +385,7 @@ class MainWindow(QMainWindow):
         self._tab_conflicts.update_results(result)
         self._tab_loadorder.update_results(result)
         self._tab_errors.update_results(result)
+        self._tab_mod_security.update_results(result)
 
         # Give the AI tab its sandbox roots.
         #   writable = active mod folders only
@@ -330,10 +404,60 @@ class MainWindow(QMainWindow):
         n_fc   = len(result["file_conflicts"])
         n_err  = getattr(report, "error_occurrences", len(report.errors))
         n_warn = getattr(report, "warn_occurrences", len(report.warns))
+        virus_results = result.get("virus_scan_results", {})
+        virus_enabled = bool(result.get("virus_scanner_enabled", False))
+        virus_high = 0
+        virus_medium = 0
+        if virus_enabled:
+            for value in virus_results.values():
+                risk = str(getattr(value, "risk_level", "")).lower()
+                if risk == "high":
+                    virus_high += 1
+                elif risk == "medium":
+                    virus_medium += 1
         self._status.showMessage(
-            f"Scan complete — {n_mods} mods  |  {n_fc} file conflicts  |  {n_err} errors  |  {n_warn} warnings")
+            f"Scan complete — {n_mods} mods  |  {n_fc} file conflicts  |  {n_err} errors  |  {n_warn} warnings"
+            + (f" | malware risk: {virus_high} high, {virus_medium} medium" if virus_enabled else "")
+        )
 
         self._setup_console_watch(result)
+
+    def _on_virus_scan_finished(self, scan_results: dict):
+        if not self._last_scan:
+            self._scan_btn.setEnabled(True)
+            self._progress.setVisible(False)
+            self._status.showMessage(
+                "Virus scan complete — run Scan first to refresh full mod status."
+            )
+            return
+
+        merged = dict(self._last_scan.get("virus_scan_results", {}))
+        merged.update(scan_results or {})
+        self._last_scan["virus_scan_results"] = merged
+        self._last_scan["virus_scanner_enabled"] = True
+        cfg = config_mod.load()
+        self._last_scan["virus_scan_mode"] = cfg.virus_scan_mode
+        self._last_scan["virus_scan_policy"] = cfg.virus_scan_policy
+
+        self._tab_mods.update_results(self._last_scan)
+        self._tab_overview.update_results(self._last_scan)
+        self._tab_mod_security.update_results(self._last_scan)
+        self._scan_btn.setEnabled(True)
+        self._progress.setVisible(False)
+        flagged = [
+            result
+            for result in merged.values()
+            if str(getattr(result, "risk_level", "safe")).lower() in {"high", "medium"}
+        ]
+        self._status.showMessage(
+            f"Virus scan complete — {len(merged)} mods checked, {len(flagged)} flagged"
+        )
+
+    def _on_virus_scan_error(self, tb: str):
+        self._scan_btn.setEnabled(True)
+        self._progress.setVisible(False)
+        self._status.showMessage("Virus scan failed — see console for traceback")
+        print(tb)
 
     def _on_tab_changed(self, idx: int):
         # Clear the "Errors •" flash marker once the user views the tab.
@@ -547,7 +671,7 @@ class MainWindow(QMainWindow):
         self._update_worker.start()
         # Optional: kick off an automatic scan
         if cfg.auto_scan_on_launch:
-            self._start_scan()
+            self._start_scan("startup")
 
     def _on_update_result(self, info):
         if info is None:

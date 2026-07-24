@@ -38,6 +38,10 @@ class ModsTab(QWidget):
         self._ai_features_enabled = False
         self._conflicts_tab = None
         self._request_rescan = None
+        self._request_virus_scan = None
+        self._virus_scan_results: dict[str, object] = {}
+        self._virus_scanner_enabled = False
+        self._virus_scan_policy = "block"
         self._build()
 
     def set_ai_tab(self, ai_tab, tabs_widget):
@@ -52,6 +56,9 @@ class ModsTab(QWidget):
 
     def set_rescan_handler(self, fn):
         self._request_rescan = fn
+
+    def set_virus_scan_handler(self, fn):
+        self._request_virus_scan = fn
 
     def _build(self):
         lay = QVBoxLayout(self)
@@ -171,6 +178,17 @@ class ModsTab(QWidget):
         report     = scan_result.get("console_report")
         dep        = scan_result.get("dep_graph")
         active_mods = scan_result.get("mods", [])
+        virus_results = scan_result.get("virus_scan_results", {})
+        normalized: dict[str, object] = {}
+        if isinstance(virus_results, dict):
+            for k, v in virus_results.items():
+                try:
+                    normalized[str(Path(k).resolve()).lower()] = v
+                except Exception:
+                    normalized[str(k).lower()] = v
+        self._virus_scan_results = normalized
+        self._virus_scanner_enabled = bool(scan_result.get("virus_scanner_enabled", False))
+        self._virus_scan_policy = str(scan_result.get("virus_scan_policy", "block"))
 
         self._mods = all_mods
         self._known_types = sorted({
@@ -288,6 +306,35 @@ class ModsTab(QWidget):
         ))
         self._table.setItem(row, 8, self._cell(status, scol, Qt.AlignmentFlag.AlignHCenter))
 
+    def _virus_scan_result_for_mod(self, mod):
+        path = getattr(mod, "path", None)
+        if not path:
+            return None
+        try:
+            key = str(path)
+            result = self._virus_scan_results.get(key.lower())
+            if result is not None:
+                return result
+            result = self._virus_scan_results.get(str(Path(path).resolve()).lower())
+            if result is not None:
+                return result
+        except Exception:
+            pass
+        return None
+
+    def _risk_level_for_mod(self, mod) -> str:
+        result = self._virus_scan_result_for_mod(mod)
+        if result is None:
+            return "safe"
+        return str(getattr(result, "risk_level", "safe")).lower()
+
+    def _is_blocked_by_scan(self, mod) -> bool:
+        return (
+            self._virus_scanner_enabled
+            and self._virus_scan_policy == "block"
+            and self._risk_level_for_mod(mod) == "high"
+        )
+
     def _cell(self, text: str, color: str | None = None,
               align=Qt.AlignmentFlag.AlignLeft) -> QTableWidgetItem:
         item = QTableWidgetItem(text)
@@ -306,6 +353,17 @@ class ModsTab(QWidget):
             return
         desired = item.checkState() == Qt.CheckState.Checked
         currently = mod_id in self._active_ids
+        mod = self._mod_for_row(self._table.row(item))
+        if desired and mod is not None and self._is_blocked_by_scan(mod):
+            self._table.blockSignals(True)
+            item.setCheckState(Qt.CheckState.Unchecked)
+            self._table.blockSignals(False)
+            QMessageBox.warning(
+                self,
+                "Blocked by policy",
+                "This mod is flagged as high risk by the malware scan and cannot be enabled in Block mode.",
+            )
+            return
         if desired == currently:
             self._pending.pop(mod_id, None)
         else:
@@ -495,6 +553,9 @@ class ModsTab(QWidget):
 
     def _current_mod(self):
         row = self._table.currentRow()
+        return self._mod_for_row(row)
+
+    def _mod_for_row(self, row: int):
         if row < 0 or self._table.isRowHidden(row):
             return None
         id_item = self._table.item(row, 2)
@@ -566,6 +627,9 @@ class ModsTab(QWidget):
         menu = QMenu(self)
         act_info = None
         act_debug = None
+        act_scan = QAction("Scan this mod for malware", self)
+        act_scan.setEnabled(self._request_virus_scan is not None)
+        menu.addAction(act_scan)
         ai_available = self._ai_features_enabled and self._ai_tab is not None
         if ai_available:
             act_info = QAction("Ask AI about this mod", self)
@@ -604,6 +668,8 @@ class ModsTab(QWidget):
 
         if act_info is not None and (chosen == act_info or chosen == act_debug):
             self._send_mod_to_ai(mod, full=(chosen == act_debug))
+        elif chosen == act_scan and self._request_virus_scan is not None:
+            self._request_virus_scan([mod])
         elif chosen == act_open_folder:
             fs_util.open_folder(mod.path)
         elif chosen == act_open_info:

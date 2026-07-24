@@ -365,6 +365,36 @@ class SettingsDialog(QDialog):
         self._watch_console.setChecked(self._cfg.watch_console)
         scan_layout.addWidget(self._watch_console)
 
+        self._virus_scanning_enabled = QCheckBox("Scan for suspicious mod content")
+        self._virus_scanning_enabled.setChecked(self._cfg.virus_scanning_enabled)
+        self._virus_scanning_enabled.toggled.connect(self._refresh_scan_controls)
+        scan_layout.addWidget(self._virus_scanning_enabled)
+
+        self._virus_scan_mode = NoWheelComboBox()
+        self._virus_scan_mode.setMaxVisibleItems(10)
+        self._virus_scan_mode.addItem("Manual only", "manual")
+        self._virus_scan_mode.addItem("On app startup", "startup")
+        self._virus_scan_mode.addItem("After workshop download", "download")
+        scan_mode_idx = self._virus_scan_mode.findData(self._cfg.virus_scan_mode)
+        if scan_mode_idx < 0:
+            scan_mode_idx = 0
+        self._virus_scan_mode.setCurrentIndex(scan_mode_idx)
+
+        self._virus_scan_policy = NoWheelComboBox()
+        self._virus_scan_policy.setMaxVisibleItems(10)
+        self._virus_scan_policy.addItem("Warn only", "warn")
+        self._virus_scan_policy.addItem("Block high-risk mods", "block")
+        scan_policy_idx = self._virus_scan_policy.findData(self._cfg.virus_scan_policy)
+        if scan_policy_idx < 0:
+            scan_policy_idx = 1
+        self._virus_scan_policy.setCurrentIndex(scan_policy_idx)
+
+        mode_row = QFormLayout()
+        mode_row.setSpacing(8)
+        mode_row.addRow("Virus scan mode:", self._virus_scan_mode)
+        mode_row.addRow("Virus scan policy:", self._virus_scan_policy)
+        scan_layout.addLayout(mode_row)
+
         content.addWidget(scan_group)
         content.addStretch(1)
 
@@ -381,6 +411,7 @@ class SettingsDialog(QDialog):
         root.addLayout(btn_row)
 
         self._refresh_ai_enabled(self._ai_enabled.isChecked())
+        self._refresh_scan_controls(self._virus_scanning_enabled.isChecked())
         self._initial_state = self._collect_state()
 
     def _repolish(self, widget):
@@ -407,6 +438,10 @@ class SettingsDialog(QDialog):
         self._protect_game_data.setEnabled(on)
         ai_on = self._ai_enabled.isChecked()
         self._access_locked_hint.setVisible(not ai_on or not on)
+
+    def _refresh_scan_controls(self, enabled: bool):
+        self._virus_scan_mode.setEnabled(enabled)
+        self._virus_scan_policy.setEnabled(enabled)
 
     def _on_provider_change(self, idx: int):
         anthropic_active = (idx == 0)
@@ -497,6 +532,9 @@ class SettingsDialog(QDialog):
             "external_editor": self._editor_cmd.text().strip(),
             "auto_scan_on_launch": self._auto_scan.isChecked(),
             "watch_console": self._watch_console.isChecked(),
+            "virus_scanning_enabled": self._virus_scanning_enabled.isChecked(),
+            "virus_scan_mode": str(self._virus_scan_mode.currentData() or "manual"),
+            "virus_scan_policy": str(self._virus_scan_policy.currentData() or "block"),
         }
 
     def _is_dirty(self) -> bool:
@@ -541,6 +579,9 @@ class SettingsDialog(QDialog):
         self._cfg.external_editor = self._editor_cmd.text().strip()
         self._cfg.auto_scan_on_launch = self._auto_scan.isChecked()
         self._cfg.watch_console = self._watch_console.isChecked()
+        self._cfg.virus_scanning_enabled = self._virus_scanning_enabled.isChecked()
+        self._cfg.virus_scan_mode = str(self._virus_scan_mode.currentData() or "manual")
+        self._cfg.virus_scan_policy = str(self._virus_scan_policy.currentData() or "block")
         config.save(self._cfg)
         self._initial_state = self._collect_state()
         self._orig_theme = self._cfg.color_theme or "midnight"
