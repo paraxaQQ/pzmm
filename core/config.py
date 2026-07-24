@@ -70,6 +70,11 @@ def load() -> Config:
         for k, v in data.items():
             if k in Config.__dataclass_fields__:
                 setattr(cfg, k, v)
+        # hand-edited/corrupt json must not crash later or reset the whole config
+        if not isinstance(cfg.api_keys, dict):
+            cfg.api_keys = {}
+        if not isinstance(cfg.models, dict):
+            cfg.models = {}
         # migrate pre-v0.3 flat provider fields into the dicts
         for prov, key_field, model_field in (
             ("anthropic", "anthropic_key", "anthropic_model"),

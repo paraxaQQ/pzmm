@@ -386,7 +386,15 @@ class SettingsDialog(QDialog):
 
     def _stash_provider_fields(self):
         self._keys[self._active_pid] = self._api_key.text().strip()
-        self._models[self._active_pid] = self._model.currentText().strip()
+        text = self._model.currentText().strip()
+        default = str(PROVIDERS[self._active_pid]["default_model"])
+        # Only record an override when it differs from the default (or one already
+        # existed) — otherwise just browsing providers dirties the dialog and pins
+        # users to today's default forever.
+        if text != default or self._active_pid in self._cfg.models:
+            self._models[self._active_pid] = text
+        else:
+            self._models.pop(self._active_pid, None)
 
     def _load_provider_fields(self, pid: str):
         info = PROVIDERS[pid]

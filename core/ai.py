@@ -400,7 +400,11 @@ def _stream_openai(api_key, model, system, messages, sandbox,
                     messages=convo, stream=True, **kwargs_base
                 )
                 for chunk in stream:
-                    delta = chunk.choices[0].delta.content if chunk.choices else None
+                    # some compat endpoints ship final/usage chunks with delta=None
+                    if chunk.choices and chunk.choices[0].delta:
+                        delta = chunk.choices[0].delta.content
+                    else:
+                        delta = None
                     if delta:
                         yield {"type": "text", "text": delta}
                 return

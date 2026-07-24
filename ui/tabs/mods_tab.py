@@ -178,17 +178,7 @@ class ModsTab(QWidget):
         report     = scan_result.get("console_report")
         dep        = scan_result.get("dep_graph")
         active_mods = scan_result.get("mods", [])
-        virus_results = scan_result.get("virus_scan_results", {})
-        normalized: dict[str, object] = {}
-        if isinstance(virus_results, dict):
-            for k, v in virus_results.items():
-                try:
-                    normalized[str(Path(k).resolve()).lower()] = v
-                except Exception:
-                    normalized[str(k).lower()] = v
-        self._virus_scan_results = normalized
-        self._virus_scanner_enabled = bool(scan_result.get("virus_scanner_enabled", False))
-        self._virus_scan_policy = str(scan_result.get("virus_scan_policy", "block"))
+        self._set_virus_state(scan_result)
 
         self._mods = all_mods
         self._known_types = sorted({
@@ -305,6 +295,23 @@ class ModsTab(QWidget):
             fc_str, COLOR_WARN if fc else COLOR_DIM, Qt.AlignmentFlag.AlignHCenter
         ))
         self._table.setItem(row, 8, self._cell(status, scol, Qt.AlignmentFlag.AlignHCenter))
+
+    def _set_virus_state(self, scan_result: dict):
+        virus_results = scan_result.get("virus_scan_results", {})
+        normalized: dict[str, object] = {}
+        if isinstance(virus_results, dict):
+            for k, v in virus_results.items():
+                try:
+                    normalized[str(Path(k).resolve()).lower()] = v
+                except Exception:
+                    normalized[str(k).lower()] = v
+        self._virus_scan_results = normalized
+        self._virus_scanner_enabled = bool(scan_result.get("virus_scanner_enabled", False))
+        self._virus_scan_policy = str(scan_result.get("virus_scan_policy", "block"))
+
+    def update_virus_results(self, scan_result: dict):
+        # Narrow refresh: no table rebuild, so pending enable/disable toggles survive.
+        self._set_virus_state(scan_result)
 
     def _virus_scan_result_for_mod(self, mod):
         path = getattr(mod, "path", None)

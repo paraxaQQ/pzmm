@@ -258,7 +258,8 @@ class MainWindow(QMainWindow):
         self._scan_btn = QPushButton("⟳  Scan")
         self._scan_btn.setObjectName("scanBtn")
         self._scan_btn.setFixedHeight(34)
-        self._scan_btn.clicked.connect(self._start_scan)
+        # clicked emits checked=False; don't let it land in the trigger parameter
+        self._scan_btn.clicked.connect(lambda: self._start_scan())
         tl.addWidget(self._scan_btn)
 
         self._profiles_btn = QPushButton("Profiles")
@@ -357,6 +358,8 @@ class MainWindow(QMainWindow):
         self._worker.start()
 
     def _scan_selected_mods(self, mods: list):
+        if self._worker and self._worker.isRunning():
+            return
         if self._virus_worker and self._virus_worker.isRunning():
             return
         if not mods:
@@ -437,9 +440,13 @@ class MainWindow(QMainWindow):
         self._last_scan["virus_scanner_enabled"] = True
         cfg = config_mod.load()
         self._last_scan["virus_scan_mode"] = cfg.virus_scan_mode
-        self._last_scan["virus_scan_policy"] = cfg.virus_scan_policy
+        # A manual per-mod scan shows results, but only enforces Block if the
+        # user actually has the scanner feature switched on.
+        self._last_scan["virus_scan_policy"] = (
+            cfg.virus_scan_policy if cfg.virus_scanning_enabled else "warn"
+        )
 
-        self._tab_mods.update_results(self._last_scan)
+        self._tab_mods.update_virus_results(self._last_scan)
         self._tab_overview.update_results(self._last_scan)
         self._tab_mod_security.update_results(self._last_scan)
         self._scan_btn.setEnabled(True)

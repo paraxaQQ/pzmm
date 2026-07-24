@@ -39,18 +39,16 @@ _BLOCKED_EXTENSIONS = {
     ".jar",
 }
 
-_SUSPECT_FILENAME_TOKENS = (
-    "inject",
-    "backdoor",
-    "payload",
-    "keygen",
-    "miner",
-    "keylogger",
-    "rat",
-    "rootkit",
+# Word-boundary match: bare substrings would flag generator.lua ("rat"),
+# examiner ("miner"), crate, duration, pirate, ...
+_SUSPECT_FILENAME_RE = re.compile(
+    r"(?:^|[^a-z])(inject|backdoor|payload|keygen|miner|keylogger|rat|rootkit)(?:[^a-z]|$)"
 )
 
 _MAX_FILE_SCAN_BYTES = 2 * 1024 * 1024
+
+# Bump whenever rules change so cached verdicts from older rule sets are rescanned.
+_ENGINE = "heuristic-v2"
 
 _SKIP_DIR_PARTS = {".git", "__pycache__", ".svn", "node_modules"}
 
@@ -211,13 +209,14 @@ def _scan_file(path: Path, rel: Path, findings: list[VirusScanFinding], risk_buc
         risk_bucket["high"] = True
         return
 
-    if any(token in name for token in _SUSPECT_FILENAME_TOKENS):
+    token_match = _SUSPECT_FILENAME_RE.search(name)
+    if token_match:
         findings.append(
             VirusScanFinding(
                 path=str(rel),
                 rule="SUSPECT_FILENAME",
                 severity="medium",
-                detail=f"suspicious filename token in {path.name}",
+                detail=f"suspicious filename token '{token_match.group(1)}' in {path.name}",
             )
         )
         risk_bucket["medium"] = True
@@ -238,6 +237,7 @@ def _scan_file(path: Path, rel: Path, findings: list[VirusScanFinding], risk_buc
                 detail=f"skipped over-large file ({size} bytes)",
             )
         )
+        risk_bucket["low"] = True
         return
 
     try:
@@ -269,6 +269,8 @@ def _load_cache_entry(cache: dict[str, dict], path: Path, current_fingerprint: s
     payload = entry.get("result")
     if not isinstance(payload, dict):
         return None
+    if payload.get("engine") != _ENGINE:
+        return None
     try:
         result = VirusScanResult.from_dict(payload)
     except Exception:
@@ -290,6 +292,7 @@ def scan_mod(
     mod_name: str = "",
     *,
     force: bool = False,
+    _cache: dict[str, dict] | None = None,
 ) -> VirusScanResult:
     root = Path(mod_path)
     start = perf_counter()
@@ -317,7 +320,8 @@ def scan_mod(
             fingerprint="",
         )
 
-    cache = _read_cache()
+    own_cache = _cache is None
+    cache = _read_cache() if own_cache else _cache
     fingerprint = _fingerprint(root)
 
     if not force:
@@ -350,7 +354,7 @@ def scan_mod(
         findings=findings,
         scanned_at=time(),
         elapsed_ms=(perf_counter() - start) * 1000.0,
-        engine="heuristic-v1",
+        engine=_ENGINE,
         fingerprint=fingerprint,
         from_cache=False,
         error="",
@@ -363,7 +367,8 @@ def scan_mod(
         "fingerprint": fingerprint,
         "result": result.to_dict(),
     }
-    _write_cache(cache)
+    if own_cache:
+        _write_cache(cache)
 
     return result
 
@@ -376,6 +381,7 @@ def scan_mods(
     include_non_workshop: bool = True,
 ) -> dict[str, VirusScanResult]:
     results: dict[str, VirusScanResult] = {}
+    cache = _read_cache()
     for mod in mods:
         source = str(getattr(mod, "source", ""))
         if include_sources is not None and source not in include_sources:
@@ -391,6 +397,9 @@ def scan_mods(
             mod_id=str(getattr(mod, "id", "")),
             mod_name=str(getattr(mod, "name", "")),
             force=force,
+            _cache=cache,
         )
         results[str(path)] = result
+    if results:
+        _write_cache(cache)
     return results
