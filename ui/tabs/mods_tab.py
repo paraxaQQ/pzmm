@@ -42,6 +42,8 @@ class ModsTab(QWidget):
         self._virus_scan_results: dict[str, object] = {}
         self._virus_scanner_enabled = False
         self._virus_scan_policy = "block"
+        self._err_map: dict[str, int] = {}
+        self._warn_map: dict[str, int] = {}
         self._build()
 
     def set_ai_tab(self, ai_tab, tabs_widget):
@@ -219,6 +221,8 @@ class ModsTab(QWidget):
         finally:
             self._table.blockSignals(False)
             self._table.setSortingEnabled(True)
+        self._err_map = err_map
+        self._warn_map = warn_map
 
         self._refresh_pending_ui()
         self._apply_filters()
@@ -236,16 +240,7 @@ class ModsTab(QWidget):
         types_text = primary_type if not sub_types else f"{primary_type} +{len(sub_types)}"
         full_types_text = ", ".join(types)
 
-        if not is_active:
-            status, scol = "INACTIVE", COLOR_DIM
-        elif n_err > 0:
-            status, scol = "ERRORS",   COLOR_ERROR
-        elif n_warn > 0:
-            status, scol = "WARNINGS", COLOR_WARN
-        elif fc > 0:
-            status, scol = "CONFLICTS", COLOR_WARN
-        else:
-            status, scol = "OK", COLOR_OK
+        status, scol = self._status_for_mod(mod, is_active, n_err, n_warn, fc)
 
         err_str  = str(n_err)  if n_err  else "—"
         fc_str   = str(fc)     if fc     else "—"
@@ -296,6 +291,49 @@ class ModsTab(QWidget):
         ))
         self._table.setItem(row, 8, self._cell(status, scol, Qt.AlignmentFlag.AlignHCenter))
 
+    def _status_for_mod(self, mod, is_active: bool, n_err: int, n_warn: int, fc: int) -> tuple[str, str]:
+        risk = self._risk_level_for_mod(mod) if self._virus_scanner_enabled else "safe"
+        if risk == "high":
+            return "HIGH RISK", COLOR_ERROR
+        if not is_active:
+            return "INACTIVE", COLOR_DIM
+        if n_err > 0:
+            return "ERRORS", COLOR_ERROR
+        if n_warn > 0:
+            return "WARNINGS", COLOR_WARN
+        if fc > 0:
+            return "CONFLICTS", COLOR_WARN
+        if risk == "medium":
+            return "SUSPICIOUS", COLOR_WARN
+        return "OK", COLOR_OK
+
+    def _refresh_status_column(self):
+        self._table.setSortingEnabled(False)
+        self._table.blockSignals(True)
+        try:
+            for row in range(self._table.rowCount()):
+                id_item = self._table.item(row, 2)
+                if id_item is None:
+                    continue
+                path = id_item.data(Qt.ItemDataRole.UserRole)
+                mod = next(
+                    (m for m in self._mods
+                     if m.id == id_item.text() and str(m.path) == path),
+                    None,
+                )
+                if mod is None:
+                    continue
+                is_active = mod.id in self._active_ids
+                mod_key = mod.id.lower().replace(" ", "").replace("'", "").replace("-", "")
+                n_err = self._err_map.get(mod_key, 0)
+                n_warn = self._warn_map.get(mod_key, 0)
+                fc = self._fc_map.get(mod.id, 0)
+                status, scol = self._status_for_mod(mod, is_active, n_err, n_warn, fc)
+                self._table.setItem(row, 8, self._cell(status, scol, Qt.AlignmentFlag.AlignHCenter))
+        finally:
+            self._table.blockSignals(False)
+            self._table.setSortingEnabled(True)
+
     def _set_virus_state(self, scan_result: dict):
         virus_results = scan_result.get("virus_scan_results", {})
         normalized: dict[str, object] = {}
@@ -312,6 +350,7 @@ class ModsTab(QWidget):
     def update_virus_results(self, scan_result: dict):
         # Narrow refresh: no table rebuild, so pending enable/disable toggles survive.
         self._set_virus_state(scan_result)
+        self._refresh_status_column()
 
     def _virus_scan_result_for_mod(self, mod):
         path = getattr(mod, "path", None)
@@ -638,6 +677,11 @@ class ModsTab(QWidget):
         act_scan.setEnabled(self._request_virus_scan is not None)
         menu.addAction(act_scan)
         ai_available = self._ai_features_enabled and self._ai_tab is not None
+        act_scan_ai = None
+        scan_result = self._virus_scan_result_for_mod(mod)
+        if ai_available and scan_result is not None and getattr(scan_result, "findings", None):
+            act_scan_ai = QAction("Ask AI about scan findings", self)
+            menu.addAction(act_scan_ai)
         if ai_available:
             act_info = QAction("Ask AI about this mod", self)
             act_debug = QAction("Debug this mod with AI  (errors + key files)", self)
@@ -677,6 +721,8 @@ class ModsTab(QWidget):
             self._send_mod_to_ai(mod, full=(chosen == act_debug))
         elif chosen == act_scan and self._request_virus_scan is not None:
             self._request_virus_scan([mod])
+        elif act_scan_ai is not None and chosen == act_scan_ai:
+            self._send_findings_to_ai(mod, scan_result)
         elif chosen == act_open_folder:
             fs_util.open_folder(mod.path)
         elif chosen == act_open_info:
@@ -765,6 +811,32 @@ class ModsTab(QWidget):
                     "AI Assistant disabled",
                     "Enable AI Assistant in Settings to use this action.",
                 )
+
+    def _send_findings_to_ai(self, mod, result):
+        if self._ai_tab is None:
+            return
+        findings = list(getattr(result, "findings", []) or [])
+        lines = [
+            f"Malware scan verdict for '{mod.name}' (id={mod.id}): "
+            f"{result.risk_level} risk, engine {result.engine}",
+            "",
+        ]
+        for f in findings[:50]:
+            lines.append(f"[{f.severity.upper()}] {f.rule}  {f.path}")
+            if f.detail:
+                lines.append(f"  {f.detail}")
+        if len(findings) > 50:
+            lines.append(f"... and {len(findings) - 50} more findings")
+        self._ai_tab.add_attachment(Attachment(
+            kind="security",
+            title=f"{mod.name} — scan findings ({result.risk_level} risk)",
+            content="\n".join(lines),
+        ))
+        if self._tabs:
+            for i in range(self._tabs.count()):
+                if self._tabs.tabText(i) == "AI Assistant":
+                    self._tabs.setCurrentIndex(i)
+                    break
 
     def _open_port_dialog(self, mod):
         if mod.source == "workshop":

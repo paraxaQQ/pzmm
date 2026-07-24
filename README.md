@@ -14,6 +14,8 @@ A standalone desktop mod manager for Project Zomboid B42. Scans your active mods
 
 - **NEW!** **Built-in browser for PZ Steam Workshop!** - A built in browser tab under "Workshop" in the UI which allows you to sign-in to steam, browse, and install workshop mods all from 1 application! **pzmm does NOT save any cookies or sign-in credentials.**
 
+- **NEW!** **Mod security scanning** - a local heuristic malware scan for your mods: flags blocked executable types, suspicious filenames, and risky Lua patterns (`os.execute`, `loadstring`, remote requires, ...). Run it manually, on startup, or after workshop downloads; choose warn-only or block high-risk mods from being enabled. Results show in a dedicated Mod Security tab and in the Mods table status column. It is not antivirus software - it's a fast local heuristic check.
+
 - **Mod type detection** - tags mods by detected content such as maps, vehicles, weapons, items, clothing, recipes, tiles, textures, Lua, patches, dependencies, and more. Mods can have multiple tags, and the Mods tab can filter/search/sort by them.
 - **Error tracking** — parses `console.txt` and maps every Lua error and stack trace back to the mod that caused it. Only shows errors from mods you currently have active. Tracks how many times each error has occurred, confidence level, cause chains, and whether attribution was direct or inferred.
 - **Error diffing** — compare against everything in the current log, what changed since the last scan, or what changed since a baseline you set. Reset the baseline any time for cleaner regression tracking.
@@ -22,7 +24,7 @@ A standalone desktop mod manager for Project Zomboid B42. Scans your active mods
 - **Mod overview** — scans both Steam Workshop and local mod folders, deduplicates versioned subfolders, reads your active mod list from `modmanager-mods.txt`. Workshop vs local copies of the same mod show readable labels so you always know which is which.
 - **Mod profiles** — save your current active mod list and load order as a named profile, then switch between them from a dialog. Useful for different playthroughs or testing setups.
 - **Mod porting** — port mods between version folders directly in the app. Shows a dry-run preview before touching anything, with options to copy missing files or overwrite, optional pre-overwrite backup, and a manifest log for every port. Workshop mods can be cloned to a local copy first so you can work on them without touching the original.
-- **AI Assistant** — chat with Claude or GPT about your mods using your own API key. Attach errors, mods, or files as context directly from right-click menus. Streaming responses, persistent chat history across sessions.
+- **AI Assistant** — chat about your mods using your own API key, with 8 supported providers: Anthropic (Claude), OpenAI (GPT), Google Gemini, xAI (Grok), DeepSeek, Mistral, OpenRouter, and local Ollama (no key needed). Attach errors, mods, scan findings, or files as context directly from right-click menus. Streaming responses, persistent chat history across sessions.
 - **AI file editing with full rollback** — optionally let the AI read and patch mod files. Every write goes through a diff-confirmation dialog first, creates a timestamped backup, and is logged to a manifest. Roll back any single write or everything from the current session in one click.
 - **Debug bundle export** — zips your console log, active mod info, and a summary report into one file for easy bug reports.
 - **Color themes** — five built-in themes: Default, Gray, Red, Green, and Amber. Pick one from Settings and it previews live.
@@ -125,8 +127,8 @@ The AI tab is hidden until you enable it in Settings.
 
 1. Click the gear icon in the top-right to open Settings
 2. Toggle **Enable AI Assistant** on
-3. Pick a provider — **Anthropic (Claude)** or **OpenAI (GPT)**
-4. Paste your API key, pick a model, and optionally write a custom system prompt
+3. Pick a provider — Anthropic, OpenAI, Google Gemini, xAI, DeepSeek, Mistral, OpenRouter, or Ollama (local, no key)
+4. Paste your API key, pick a model (the box is editable, any model ID works), and optionally write a custom system prompt
 5. Hit **Save**
 
 Keys are stored locally in `%APPDATA%/pzmm/config.json` and only ever leave your machine to reach the provider you selected.
