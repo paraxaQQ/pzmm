@@ -12,6 +12,7 @@ from PyQt6.QtGui import QKeyEvent
 from PyQt6.QtCore import Qt
 
 from core import config
+from core.ai import PROVIDERS
 from ui import style
 
 
@@ -20,48 +21,6 @@ class NoWheelComboBox(QComboBox):
 
     def wheelEvent(self, event):
         event.ignore()
-
-
-ANTHROPIC_MODELS = [
-    # Current Claude models
-    "claude-opus-4-7",
-    "claude-sonnet-4-6",
-    "claude-haiku-4-5",
-    "claude-haiku-4-5-20251001",
-    # Recent legacy models kept for existing accounts/configs
-    "claude-opus-4-6",
-    "claude-sonnet-4-5",
-    "claude-opus-4-1-20250805",
-    "claude-opus-4-20250514",
-    "claude-sonnet-4-20250514",
-    "claude-3-5-haiku-20241022",
-]
-
-OPENAI_MODELS = [
-    # Chat Completions-compatible GPT models
-    "gpt-5.2",
-    "gpt-5.2-chat-latest",
-    "gpt-5.1",
-    "gpt-5.1-chat-latest",
-    "gpt-5",
-    "gpt-5-chat-latest",
-    "gpt-5-mini",
-    "gpt-5-nano",
-    # GPT-4.1 and GPT-4o families
-    "gpt-4.1",
-    "gpt-4.1-mini",
-    "gpt-4.1-nano",
-    "gpt-4o",
-    "gpt-4o-mini",
-    # Recent reasoning models
-    "o4-mini",
-    "o3",
-    "o3-mini",
-    "o1-pro",
-    "o1",
-    # Older but still available on many projects
-    "gpt-4-turbo",
-]
 
 
 class SettingsDialog(QDialog):
@@ -194,45 +153,32 @@ class SettingsDialog(QDialog):
         form = QFormLayout()
         form.setSpacing(10)
 
-        self._provider = QComboBox()
-        self._provider.setMaxVisibleItems(10)
-        self._provider.addItems(["Anthropic (Claude)", "OpenAI (GPT)"])
-        self._provider.setCurrentIndex(0 if self._cfg.provider == "anthropic" else 1)
-        self._provider.currentIndexChanged.connect(self._on_provider_change)
+        self._keys = dict(self._cfg.api_keys)
+        self._models = dict(self._cfg.models)
+
+        self._provider = NoWheelComboBox()
+        self._provider.setMaxVisibleItems(len(PROVIDERS))
+        for pid, info in PROVIDERS.items():
+            self._provider.addItem(info["label"], pid)
+        start_idx = self._provider.findData(self._cfg.provider)
+        self._provider.setCurrentIndex(max(0, start_idx))
+        self._active_pid = str(self._provider.currentData())
         form.addRow("Provider:", self._provider)
 
-        self._anthropic_key = QLineEdit(self._cfg.anthropic_key)
-        self._anthropic_key.setEchoMode(QLineEdit.EchoMode.Password)
-        self._anthropic_key.setPlaceholderText("sk-ant-...")
-        self._anthropic_key_label = QLabel("Anthropic key:")
-        form.addRow(self._anthropic_key_label, self._anthropic_key)
+        self._api_key = QLineEdit()
+        self._api_key.setEchoMode(QLineEdit.EchoMode.Password)
+        self._api_key_label = QLabel("API key:")
+        form.addRow(self._api_key_label, self._api_key)
 
-        self._openai_key = QLineEdit(self._cfg.openai_key)
-        self._openai_key.setEchoMode(QLineEdit.EchoMode.Password)
-        self._openai_key.setPlaceholderText("sk-...")
-        self._openai_key_label = QLabel("OpenAI key:")
-        form.addRow(self._openai_key_label, self._openai_key)
-
-        self._anthropic_model = QComboBox()
-        self._anthropic_model.setMaxVisibleItems(10)
-        self._anthropic_model.setEditable(True)
-        self._anthropic_model.addItems(ANTHROPIC_MODELS)
-        if self._cfg.anthropic_model not in ANTHROPIC_MODELS:
-            self._anthropic_model.addItem(self._cfg.anthropic_model)
-        self._anthropic_model.setCurrentText(self._cfg.anthropic_model)
-        self._anthropic_model_label = QLabel("Claude model:")
-        form.addRow(self._anthropic_model_label, self._anthropic_model)
-
-        self._openai_model = QComboBox()
-        self._openai_model.setMaxVisibleItems(10)
-        self._openai_model.setEditable(True)
-        self._openai_model.addItems(OPENAI_MODELS)
-        if self._cfg.openai_model not in OPENAI_MODELS:
-            self._openai_model.addItem(self._cfg.openai_model)
-        self._openai_model.setCurrentText(self._cfg.openai_model)
-        self._openai_model_label = QLabel("GPT model:")
-        form.addRow(self._openai_model_label, self._openai_model)
+        self._model = NoWheelComboBox()
+        self._model.setMaxVisibleItems(10)
+        self._model.setEditable(True)
+        self._model_label = QLabel("Model:")
+        form.addRow(self._model_label, self._model)
         provider_layout.addLayout(form)
+
+        self._load_provider_fields(self._active_pid)
+        self._provider.currentIndexChanged.connect(self._on_provider_change)
 
         sys_label = QLabel("System prompt")
         sys_label.setStyleSheet(
@@ -250,14 +196,10 @@ class SettingsDialog(QDialog):
         self._mark_ai_controls(
             self._provider_group,
             self._provider,
-            self._anthropic_key,
-            self._openai_key,
-            self._anthropic_model,
-            self._openai_model,
-            self._anthropic_key_label,
-            self._openai_key_label,
-            self._anthropic_model_label,
-            self._openai_model_label,
+            self._api_key,
+            self._model,
+            self._api_key_label,
+            self._model_label,
             sys_label,
             self._sysprompt,
         )
@@ -430,7 +372,6 @@ class SettingsDialog(QDialog):
         self._access_group.setProperty("aiLocked", not on)
         self._repolish(self._provider_group)
         self._repolish(self._access_group)
-        self._on_provider_change(self._provider.currentIndex())
         self._refresh_file_toggles(on and self._file_access.isChecked())
 
     def _refresh_file_toggles(self, on: bool):
@@ -443,28 +384,26 @@ class SettingsDialog(QDialog):
         self._virus_scan_mode.setEnabled(enabled)
         self._virus_scan_policy.setEnabled(enabled)
 
+    def _stash_provider_fields(self):
+        self._keys[self._active_pid] = self._api_key.text().strip()
+        self._models[self._active_pid] = self._model.currentText().strip()
+
+    def _load_provider_fields(self, pid: str):
+        info = PROVIDERS[pid]
+        self._active_pid = pid
+        self._api_key.setText(self._keys.get(pid, ""))
+        self._api_key.setPlaceholderText(info["key_placeholder"])
+        self._model.clear()
+        self._model.addItems(info["models"])
+        saved = self._models.get(pid, "")
+        if saved and saved not in info["models"]:
+            self._model.addItem(saved)
+        self._model.setCurrentText(saved or info["default_model"])
+
     def _on_provider_change(self, idx: int):
-        anthropic_active = (idx == 0)
-        ai_on = self._ai_enabled.isChecked()
-
-        self._provider.setEnabled(ai_on)
-        self._anthropic_key.setEnabled(ai_on and anthropic_active)
-        self._anthropic_model.setEnabled(ai_on and anthropic_active)
-        self._openai_key.setEnabled(ai_on and not anthropic_active)
-        self._openai_model.setEnabled(ai_on and not anthropic_active)
-
-        self._anthropic_key_label.setStyleSheet(
-            "" if ai_on and anthropic_active else f"color: {style.COLOR_DIM};"
-        )
-        self._anthropic_model_label.setStyleSheet(
-            "" if ai_on and anthropic_active else f"color: {style.COLOR_DIM};"
-        )
-        self._openai_key_label.setStyleSheet(
-            "" if ai_on and not anthropic_active else f"color: {style.COLOR_DIM};"
-        )
-        self._openai_model_label.setStyleSheet(
-            "" if ai_on and not anthropic_active else f"color: {style.COLOR_DIM};"
-        )
+        self._stash_provider_fields()
+        pid = str(self._provider.currentData() or "anthropic")
+        self._load_provider_fields(pid)
 
     def _pick_editor(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -517,13 +456,12 @@ class SettingsDialog(QDialog):
             event.ignore()
 
     def _collect_state(self) -> dict[str, object]:
+        self._stash_provider_fields()
         return {
             "ai_assistant_enabled": self._ai_enabled.isChecked(),
-            "provider": self._provider.currentIndex(),
-            "anthropic_key": self._anthropic_key.text().strip(),
-            "openai_key": self._openai_key.text().strip(),
-            "anthropic_model": self._anthropic_model.currentText().strip(),
-            "openai_model": self._openai_model.currentText().strip(),
+            "provider": str(self._provider.currentData() or "anthropic"),
+            "api_keys": {k: v for k, v in self._keys.items() if v},
+            "models": {k: v for k, v in self._models.items() if v},
             "system_prompt": self._sysprompt.toPlainText().strip(),
             "allow_file_access": self._file_access.isChecked(),
             "ai_trusted_mode": self._trusted_mode.isChecked(),
@@ -565,12 +503,11 @@ class SettingsDialog(QDialog):
         return False  # _save() closes the dialog
 
     def _save(self):
+        self._stash_provider_fields()
         self._cfg.ai_assistant_enabled = self._ai_enabled.isChecked()
-        self._cfg.provider = "anthropic" if self._provider.currentIndex() == 0 else "openai"
-        self._cfg.anthropic_key = self._anthropic_key.text().strip()
-        self._cfg.openai_key = self._openai_key.text().strip()
-        self._cfg.anthropic_model = self._anthropic_model.currentText().strip()
-        self._cfg.openai_model = self._openai_model.currentText().strip()
+        self._cfg.provider = str(self._provider.currentData() or "anthropic")
+        self._cfg.api_keys = {k: v for k, v in self._keys.items() if v}
+        self._cfg.models = {k: v for k, v in self._models.items() if v}
         self._cfg.system_prompt = self._sysprompt.toPlainText().strip()
         self._cfg.allow_file_access = self._file_access.isChecked()
         self._cfg.ai_trusted_mode = self._trusted_mode.isChecked()

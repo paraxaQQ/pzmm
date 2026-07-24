@@ -267,7 +267,7 @@ class AITab(QWidget):
             return
 
         cfg = config.load()
-        if not cfg.active_key:
+        if not cfg.active_key and not ai.PROVIDERS.get(cfg.provider, {}).get("key_optional"):
             self._append_system("No API key configured. Open Settings (gear icon) to add one.")
             return
 

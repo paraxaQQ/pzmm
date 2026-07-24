@@ -20,11 +20,9 @@ CONFIG_PATH = _config_dir() / "config.json"
 @dataclass
 class Config:
     ai_assistant_enabled: bool = False           # hide AI tab unless explicitly enabled
-    provider: str = "anthropic"                 # "anthropic" | "openai"
-    anthropic_key: str = ""
-    openai_key: str = ""
-    anthropic_model: str = "claude-sonnet-4-6"
-    openai_model: str = "gpt-5.2"
+    provider: str = "anthropic"                  # key into core.ai.PROVIDERS
+    api_keys: dict[str, str] = field(default_factory=dict)   # provider id -> API key
+    models: dict[str, str] = field(default_factory=dict)     # provider id -> model override
     system_prompt: str = (
         "You are an expert Project Zomboid modder helping debug and fix B42 mods. "
         "You know the Lua API, the B41->B42 breaking changes (getClassFieldVal signature, "
@@ -52,11 +50,15 @@ class Config:
 
     @property
     def active_key(self) -> str:
-        return self.anthropic_key if self.provider == "anthropic" else self.openai_key
+        return self.api_keys.get(self.provider, "")
 
     @property
     def active_model(self) -> str:
-        return self.anthropic_model if self.provider == "anthropic" else self.openai_model
+        model = self.models.get(self.provider, "")
+        if model:
+            return model
+        from core.ai import PROVIDERS
+        return str(PROVIDERS.get(self.provider, {}).get("default_model", ""))
 
 
 def load() -> Config:
@@ -66,8 +68,19 @@ def load() -> Config:
         data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
         cfg = Config()
         for k, v in data.items():
-            if hasattr(cfg, k):
+            if k in Config.__dataclass_fields__:
                 setattr(cfg, k, v)
+        # migrate pre-v0.3 flat provider fields into the dicts
+        for prov, key_field, model_field in (
+            ("anthropic", "anthropic_key", "anthropic_model"),
+            ("openai", "openai_key", "openai_model"),
+        ):
+            key = str(data.get(key_field, "") or "")
+            if key and not cfg.api_keys.get(prov):
+                cfg.api_keys[prov] = key
+            model = str(data.get(model_field, "") or "")
+            if model and not cfg.models.get(prov):
+                cfg.models[prov] = model
         return cfg
     except Exception:
         return Config()

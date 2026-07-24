@@ -1,4 +1,9 @@
-"""AI provider abstraction — Anthropic + OpenAI, streaming chat with optional tool use."""
+"""AI provider abstraction — streaming chat with optional tool use.
+
+Anthropic uses its native SDK; every other provider speaks the OpenAI
+chat-completions protocol (tools + streaming included), so they all share
+the OpenAI SDK pointed at a per-provider base_url.
+"""
 from __future__ import annotations
 import json
 from typing import Iterator, Callable, Any
@@ -8,6 +13,114 @@ from core.sandbox import Sandbox, SandboxError, tool_read_file, tool_write_file,
 
 class AIError(Exception):
     pass
+
+
+# ── Provider registry ───────────────────────────────────────────────────────────
+# Single source of truth for the settings UI and stream_chat routing.
+# base_url None = the SDK's native endpoint. Model lists are curated defaults;
+# the settings combo is editable so any model ID works.
+
+PROVIDERS: dict[str, dict[str, Any]] = {
+    "anthropic": {
+        "label": "Anthropic (Claude)",
+        "base_url": None,
+        "key_placeholder": "sk-ant-...",
+        "key_optional": False,
+        "models": [
+            "claude-sonnet-5",
+            "claude-haiku-4-5",
+            "claude-opus-4-8",
+            "claude-sonnet-4-6",
+            "claude-opus-4-7",
+        ],
+        "default_model": "claude-sonnet-5",
+    },
+    "openai": {
+        "label": "OpenAI (GPT)",
+        "base_url": None,
+        "key_placeholder": "sk-...",
+        "key_optional": False,
+        "models": [
+            "gpt-5.6-terra",
+            "gpt-5.6-luna",
+            "gpt-5.6-sol",
+            "gpt-5.2",
+            "gpt-5-mini",
+        ],
+        "default_model": "gpt-5.6-terra",
+    },
+    "gemini": {
+        "label": "Google Gemini",
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+        "key_placeholder": "AIza...",
+        "key_optional": False,
+        "models": [
+            "gemini-3.6-flash",
+            "gemini-3.5-flash-lite",
+            "gemini-2.5-pro",
+            "gemini-2.5-flash",
+        ],
+        "default_model": "gemini-3.6-flash",
+    },
+    "xai": {
+        "label": "xAI (Grok)",
+        "base_url": "https://api.x.ai/v1",
+        "key_placeholder": "xai-...",
+        "key_optional": False,
+        "models": [
+            "grok-4.1-fast",
+            "grok-4.3",
+        ],
+        "default_model": "grok-4.1-fast",
+    },
+    "deepseek": {
+        "label": "DeepSeek",
+        "base_url": "https://api.deepseek.com",
+        "key_placeholder": "sk-...",
+        "key_optional": False,
+        "models": [
+            "deepseek-v4-flash",
+            "deepseek-v4-pro",
+        ],
+        "default_model": "deepseek-v4-flash",
+    },
+    "mistral": {
+        "label": "Mistral",
+        "base_url": "https://api.mistral.ai/v1",
+        "key_placeholder": "",
+        "key_optional": False,
+        "models": [
+            "mistral-small-latest",
+            "mistral-medium-latest",
+            "mistral-large-latest",
+        ],
+        "default_model": "mistral-small-latest",
+    },
+    "openrouter": {
+        "label": "OpenRouter",
+        "base_url": "https://openrouter.ai/api/v1",
+        "key_placeholder": "sk-or-...",
+        "key_optional": False,
+        "models": [
+            "x-ai/grok-4.3",
+            "anthropic/claude-sonnet-5",
+            "deepseek/deepseek-v4-flash",
+        ],
+        "default_model": "x-ai/grok-4.3",
+    },
+    "ollama": {
+        "label": "Ollama (local)",
+        "base_url": "http://localhost:11434/v1",
+        "key_placeholder": "(no key needed)",
+        "key_optional": True,
+        "models": [
+            "llama3.1",
+            "qwen3",
+            "mistral",
+        ],
+        "default_model": "llama3.1",
+    },
+}
 
 
 # ── Event shape ─────────────────────────────────────────────────────────────────
@@ -128,15 +241,20 @@ def stream_chat(
     sandbox: Sandbox | None = None,
 ) -> Iterator[dict]:
     """Yields event dicts (see shape above)."""
-    if not api_key:
+    info = PROVIDERS.get(provider)
+    if info is None:
+        raise AIError(f"Unknown provider: {provider}")
+    if not api_key and not info["key_optional"]:
         raise AIError("No API key configured. Open Settings to add one.")
 
     if provider == "anthropic":
         yield from _stream_anthropic(api_key, model, system, messages, sandbox)
-    elif provider == "openai":
-        yield from _stream_openai(api_key, model, system, messages, sandbox)
     else:
-        raise AIError(f"Unknown provider: {provider}")
+        # the OpenAI SDK requires a non-empty key even when the server ignores it (ollama)
+        yield from _stream_openai(
+            api_key or "ollama", model, system, messages, sandbox,
+            base_url=info["base_url"], label=info["label"],
+        )
 
 
 # ── Anthropic ───────────────────────────────────────────────────────────────────
@@ -210,15 +328,16 @@ def _stream_anthropic(api_key, model, system, messages, sandbox):
         raise AIError(f"Anthropic API error: {e}")
 
 
-# ── OpenAI ──────────────────────────────────────────────────────────────────────
+# ── OpenAI-compatible (OpenAI, Gemini, xAI, DeepSeek, Mistral, OpenRouter, Ollama) ──
 
-def _stream_openai(api_key, model, system, messages, sandbox):
+def _stream_openai(api_key, model, system, messages, sandbox,
+                   base_url: str | None = None, label: str = "OpenAI"):
     try:
         from openai import OpenAI
     except ImportError:
         raise AIError("OpenAI SDK not installed. Run: pip install openai")
 
-    client = OpenAI(api_key=api_key)
+    client = OpenAI(api_key=api_key, base_url=base_url)
     use_tools = sandbox is not None and sandbox.has_roots()
 
     effective_system = system
@@ -286,4 +405,4 @@ def _stream_openai(api_key, model, system, messages, sandbox):
                         yield {"type": "text", "text": delta}
                 return
     except Exception as e:
-        raise AIError(f"OpenAI API error: {e}")
+        raise AIError(f"{label} API error: {e}")
