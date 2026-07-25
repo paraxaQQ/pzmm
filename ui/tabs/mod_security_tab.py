@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 from pathlib import Path
 
 from PyQt6.QtWidgets import (
@@ -14,6 +15,26 @@ from PyQt6.QtWidgets import (
 from ui.style import COLOR_ERROR, COLOR_OK, COLOR_WARN
 from ui.tabs.overview import _issue_row, _stat_card
 from core import config as config_mod
+
+
+def _finding_row(finding) -> QLabel:
+    # finding fields originate in untrusted mod content — always escape
+    sev = str(getattr(finding, "severity", "low")).lower()
+    colors = {"high": COLOR_ERROR, "medium": COLOR_WARN, "low": "#8a96b3"}
+    color = colors.get(sev, "#8a96b3")
+    rule = html.escape(str(getattr(finding, "rule", "?")))
+    path = html.escape(str(getattr(finding, "path", "")))
+    detail = html.escape(str(getattr(finding, "detail", "")))
+    text = (
+        f'<span style="color:{color}; font-weight:600;">[{sev.upper()}]</span> '
+        f'{rule} &nbsp;&mdash;&nbsp; {path}'
+    )
+    if detail:
+        text += f'<br><span style="color:#7e88a8;">{detail}</span>'
+    lbl = QLabel(text)
+    lbl.setStyleSheet("background: transparent; padding: 1px 0 1px 28px; font-size: 11px;")
+    lbl.setWordWrap(True)
+    return lbl
 
 
 class ModSecurityTab(QWidget):
@@ -154,5 +175,12 @@ class ModSecurityTab(QWidget):
             finding_count = len(findings) if isinstance(findings, list) else 0
             self._add_issue(
                 severity,
-                f"{risk.upper()}: {mod_label}  ({finding_count} findings)"
+                f"{risk.upper()}: {html.escape(mod_label)}  ({finding_count} findings)"
             )
+            if isinstance(findings, list):
+                for finding in findings[:8]:
+                    self._issues_layout.insertWidget(
+                        self._issues_layout.count() - 1, _finding_row(finding)
+                    )
+                if finding_count > 8:
+                    self._add_issue("info", f"... and {finding_count - 8} more findings in {html.escape(mod_label)}")

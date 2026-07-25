@@ -289,7 +289,20 @@ class ModsTab(QWidget):
         self._table.setItem(row, 7, self._cell(
             fc_str, COLOR_WARN if fc else COLOR_DIM, Qt.AlignmentFlag.AlignHCenter
         ))
-        self._table.setItem(row, 8, self._cell(status, scol, Qt.AlignmentFlag.AlignHCenter))
+        self._table.setItem(row, 8, self._status_cell(mod, status, scol))
+
+    def _status_cell(self, mod, status: str, scol: str) -> QTableWidgetItem:
+        item = self._cell(status, scol, Qt.AlignmentFlag.AlignHCenter)
+        result = self._virus_scan_result_for_mod(mod) if self._virus_scanner_enabled else None
+        findings = list(getattr(result, "findings", []) or []) if result is not None else []
+        if findings:
+            lines = [f"Malware scan: {getattr(result, 'risk_level', '?')} risk"]
+            for f in findings[:6]:
+                lines.append(f"[{f.severity.upper()}] {f.rule} — {f.path}")
+            if len(findings) > 6:
+                lines.append(f"... and {len(findings) - 6} more (see Mod Security tab)")
+            item.setToolTip("\n".join(lines))
+        return item
 
     def _status_for_mod(self, mod, is_active: bool, n_err: int, n_warn: int, fc: int) -> tuple[str, str]:
         risk = self._risk_level_for_mod(mod) if self._virus_scanner_enabled else "safe"
@@ -329,7 +342,7 @@ class ModsTab(QWidget):
                 n_warn = self._warn_map.get(mod_key, 0)
                 fc = self._fc_map.get(mod.id, 0)
                 status, scol = self._status_for_mod(mod, is_active, n_err, n_warn, fc)
-                self._table.setItem(row, 8, self._cell(status, scol, Qt.AlignmentFlag.AlignHCenter))
+                self._table.setItem(row, 8, self._status_cell(mod, status, scol))
         finally:
             self._table.blockSignals(False)
             self._table.setSortingEnabled(True)
