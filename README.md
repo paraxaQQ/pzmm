@@ -1,6 +1,4 @@
-# pzmm v0.3 | Project Zomboid Mod Manager
-
-**v0.4 soon?**
+# pzmm | Project Zomboid Mod Manager
 
 > Errors down to the Lua.
 
