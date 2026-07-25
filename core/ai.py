@@ -29,7 +29,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         "models": [
             "claude-sonnet-5",
             "claude-haiku-4-5",
-            "claude-opus-4-8",
+            "claude-opus-5",
         ],
         "default_model": "claude-sonnet-5",
     },
