@@ -39,6 +39,7 @@ console.txt
 # pzmm runtime artifacts (should never end up in the repo)
 config.json
 backups.json
+virus_scans.json
 *.pzmm.bak*
 
 # Claude Code local state
@@ -47,6 +48,7 @@ backups.json
 # Test runtime temp folders
 _tmp_test_runs/
 tests/.tmp_tests/
+.pytest_cache/
 
 # Local demo/test environments and exported debug bundles
 _worstcase_env/
