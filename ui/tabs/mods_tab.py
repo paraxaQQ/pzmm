@@ -470,6 +470,32 @@ class ModsTab(QWidget):
             QMessageBox.warning(self, "Apply", "Zomboid root not detected — can't write.")
             return
 
+        # Re-validate at apply time: a scan may have flagged a mod high risk
+        # after the user checked it, and pending toggles survive scans.
+        blocked_ids = {
+            mid for mid, on in self._pending.items()
+            if on and any(m.id == mid and self._is_blocked_by_scan(m) for m in self._mods)
+        }
+        if blocked_ids:
+            for mid in blocked_ids:
+                self._pending.pop(mid, None)
+            self._table.blockSignals(True)
+            try:
+                for row in range(self._table.rowCount()):
+                    chk = self._table.item(row, 0)
+                    if chk and chk.data(Qt.ItemDataRole.UserRole) in blocked_ids:
+                        chk.setCheckState(Qt.CheckState.Unchecked)
+            finally:
+                self._table.blockSignals(False)
+            self._refresh_pending_ui()
+            QMessageBox.warning(
+                self, "Blocked by policy",
+                "These mods were flagged high risk by the malware scan and were "
+                "not enabled:\n" + "\n".join(sorted(blocked_ids)),
+            )
+            if not self._pending:
+                return
+
         # Compute desired active set
         desired_active: set[str] = set(self._active_ids)
         for mid, on in self._pending.items():
