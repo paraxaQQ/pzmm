@@ -4,7 +4,7 @@
 
 > Errors down to the Lua.
 
-A standalone desktop mod manager for Project Zomboid B42. Scans your active mods, parses real runtime errors straight from `console.txt`, maps them back to the responsible mod, surfaces file conflicts, and handles load order. No guesswork.
+A standalone desktop mod manager for Project Zomboid B42 that covers the whole mod workflow: browse and install from the Steam Workshop, scan mods for security risks, track down runtime errors to the responsible mod, resolve file conflicts, and manage load order. No guesswork.
 
 ![Python](https://img.shields.io/badge/python-3.11+-blue) ![PyQt6](https://img.shields.io/badge/PyQt6-6.6+-green) ![PZ](https://img.shields.io/badge/Project%20Zomboid-B42-red)
 
@@ -12,18 +12,16 @@ A standalone desktop mod manager for Project Zomboid B42. Scans your active mods
 
 ## What it does
 
-- **NEW!** **Built-in browser for PZ Steam Workshop!** - A built in browser tab under "Workshop" in the UI which allows you to sign-in to steam, browse, and install workshop mods all from 1 application! **pzmm does NOT save any cookies or sign-in credentials.**
-
-- **NEW!** **Mod security scanning** - a local heuristic malware scan for your mods: flags blocked executable types, suspicious filenames, and risky Lua patterns (`os.execute`, `loadstring`, remote requires, ...). Run it manually, on startup, or after workshop downloads; choose warn-only or block high-risk mods from being enabled. Results show in a dedicated Mod Security tab and in the Mods table status column. It is not antivirus software - it's a fast local heuristic check.
-
-- **Mod type detection** - tags mods by detected content such as maps, vehicles, weapons, items, clothing, recipes, tiles, textures, Lua, patches, dependencies, and more. Mods can have multiple tags, and the Mods tab can filter/search/sort by them.
-- **Error tracking** — parses `console.txt` and maps every Lua error and stack trace back to the mod that caused it. Only shows errors from mods you currently have active. Tracks how many times each error has occurred, confidence level, cause chains, and whether attribution was direct or inferred.
+- **Built-in Steam Workshop browser** — sign in to Steam, browse, and install workshop mods without leaving the app. pzmm does not read, save, or autofill any cookies or sign-in credentials.
+- **Mod security scanning** — a local heuristic malware scan: flags executable file types, suspicious filenames, and risky Lua patterns (`os.execute`, `io.popen`, `loadstring`, remote requires, ...). Run it manually, on startup, or after workshop downloads; choose warn-only or block high-risk mods from being enabled. Every finding shows its rule, file, and reason. It is not antivirus software — it's a fast local heuristic check.
+- **Error tracking** — parses `console.txt` and maps every Lua error and stack trace back to the mod that caused it. Only shows errors from mods you currently have active. Tracks how many times each error occurred, confidence level, cause chains, and whether attribution was direct or inferred.
 - **Error diffing** — compare against everything in the current log, what changed since the last scan, or what changed since a baseline you set. Reset the baseline any time for cleaner regression tracking.
-- **File conflict detection** — finds overlapping `.lua`, `.txt`, `.xml`, `.json`, and `.ini` files across mods, shows you which mod wins, and diffs the losing version against the winner so you can see exactly what's being overridden.
+- **File conflict detection** — finds overlapping `.lua`, `.txt`, `.xml`, `.json`, and `.ini` files across mods, shows which mod wins, and diffs the losing version against the winner so you can see exactly what's being overridden.
 - **Load order solver** — topological sort based on mod dependencies, stable and deterministic across restarts. One-click apply writes the order back to disk with automatic timestamped backups.
+- **Mod type detection** — tags mods by detected content: maps, vehicles, weapons, items, clothing, recipes, tiles, textures, Lua, patches, dependencies, and more. Mods can have multiple tags, and the Mods tab can filter/search/sort by them.
 - **Mod overview** — scans both Steam Workshop and local mod folders, deduplicates versioned subfolders, reads your active mod list from `modmanager-mods.txt`. Workshop vs local copies of the same mod show readable labels so you always know which is which.
 - **Mod profiles** — save your current active mod list and load order as a named profile, then switch between them from a dialog. Useful for different playthroughs or testing setups.
-- **Mod porting** — port mods between version folders directly in the app. Shows a dry-run preview before touching anything, with options to copy missing files or overwrite, optional pre-overwrite backup, and a manifest log for every port. Workshop mods can be cloned to a local copy first so you can work on them without touching the original.
+- **Mod porting** — port mods between version folders directly in the app, with a dry-run preview, optional pre-overwrite backup, and a manifest log for every port. Workshop mods can be cloned to a local copy first so you can work on them without touching the original.
 - **AI Assistant** — chat about your mods using your own API key, with 8 supported providers: Anthropic (Claude), OpenAI (GPT), Google Gemini, xAI (Grok), DeepSeek, Mistral, OpenRouter, and local Ollama (no key needed). Attach errors, mods, scan findings, or files as context directly from right-click menus. Streaming responses, persistent chat history across sessions.
 - **AI file editing with full rollback** — optionally let the AI read and patch mod files. Every write goes through a diff-confirmation dialog first, creates a timestamped backup, and is logged to a manifest. Roll back any single write or everything from the current session in one click.
 - **Debug bundle export** — zips your console log, active mod info, and a summary report into one file for easy bug reports.
@@ -62,28 +60,43 @@ The built executable will be at `dist/pzmm.exe`.
 
 ## Usage
 
-Launch the app, then hit **Scan**. The status bar walks through each step as it goes: detecting Steam libraries, loading mods, parsing conflicts, solving load order, and reading `console.txt`. When it finishes you'll see a summary like `Scan complete — 84 mods | 3 file conflicts | 12 errors | 2 warnings`.
+Launch the app, then hit **Scan**. The status bar walks through each step as it goes: detecting Steam libraries, loading mods, parsing conflicts, solving load order, reading `console.txt`, and (if enabled) scanning for suspicious mod content. When it finishes you'll see a summary like `Scan complete — 84 mods | 3 file conflicts | 12 errors | 2 warnings`.
 
 If a new version is available, a pill appears in the toolbar. Click it to open the release page. No telemetry, no auto-download, and you can dismiss a specific version if you don't want to see it again.
-
-### Overview tab
-
-The first thing you see after a scan. Five stat cards at the top show your active mod count, error count, warnings, file conflicts, and dependency cycles, each color-coded by severity. Below that is a scrollable issues list covering your top errors, warnings, and conflicts. The **Export Debug Bundle** button at the top of that list zips your console log, all active mod.info files, and a summary report into one file — handy for attaching to bug reports or sharing with a mod author.
 
 ### Mods tab
 
 A searchable table of every mod pzmm found, active or not. Check or uncheck mods to stage changes, then hit **Apply** to write them to disk. Pending changes show as `+X enable -Y disable` at the bottom, and **Undo** rolls them all back. Use the **Active only** checkbox to cut down the list.
 
-The **Types** column shows the primary detected category first, with a compact `+N` count when supporting tags are present. A vehicle mod might show `Vehicles +6` instead of listing every bundled recipe, texture, translation, and Lua file in the table. By default, the type filter matches the displayed primary type only. Turn on **Include tags** to also match supporting tags, and use **Match all** to require every selected type/tag in that expanded mode. The search box also matches type names, and the table can be sorted by the Types column.
+The **Types** column shows the primary detected category first, with a compact `+N` count when supporting tags are present. A vehicle mod might show `Vehicles +6` instead of listing every bundled recipe, texture, translation, and Lua file. By default, the type filter matches the displayed primary type only. Turn on **Include tags** to also match supporting tags, and use **Match all** to require every selected type/tag in that expanded mode. The search box also matches type names, and the table can be sorted by the Types column.
+
+The **Status** column folds in scan results: a mod flagged by the security scan shows `HIGH RISK` or `SUSPICIOUS`, and hovering the cell shows the top findings.
 
 Selecting a mod shows a details strip below the table with its detected types, ID, source, PZ version, workshop ID, dependencies, and folder path.
 
 Right-clicking any mod row gives you:
 
+- **Scan this mod for malware** — runs the security scan on just that mod
 - **Open mod folder** and **open mod.info in editor** (auto-detects Notepad++ or falls back to Notepad)
 - **View file conflicts** — jumps to the Conflicts tab filtered to that mod
 - **Port Version Folder** (local mods) or **Clone To Local + Port** (workshop mods) — see the porting section below
-- AI actions if the assistant is enabled
+- AI actions if the assistant is enabled, including **Ask AI about scan findings** for flagged mods
+
+### Mod Security tab
+
+Shows the results of the last security scan: stat cards for scanned/high/medium/low counts, then a per-mod list where every finding is spelled out — severity, rule, the file that tripped it, and the reason (e.g. `[HIGH] OS_EXECUTE — media/lua/client/x.lua`).
+
+Enable scanning in **Settings → Scan behavior**. You control when it runs (manual only, on app startup, or after workshop downloads) and what it does (warn only, or block high-risk mods). Block mode prevents flagged mods from being *enabled* through pzmm — both at the checkbox and again at Apply time. It never touches files, never auto-disables already-active mods, and doesn't stop the game itself from loading anything; it's a guardrail inside pzmm, not a quarantine.
+
+Severity is deliberately conservative: only patterns with no legitimate use in a PZ mod (`os.execute`, `io.popen`, `package.loadlib`, executable file types) are block-eligible. Dynamic Lua like `loadstring`/`dofile` — which legitimate mods do use — only warns.
+
+### Workshop tab
+
+An embedded Steam Workshop browser scoped to Project Zomboid. Sign in to Steam, browse, and subscribe to mods; Steam client links hand off to your running Steam client. After downloads finish, pzmm rescans automatically (and runs the security scan, if you've set the mode to "after workshop download"). No cookies or credentials are read or persisted by pzmm.
+
+### Overview tab
+
+Five stat cards show your active mod count, error count, warnings, file conflicts, and dependency cycles, each color-coded by severity. Below that is a scrollable issues list covering your top errors, warnings, and conflicts. The **Export Debug Bundle** button zips your console log, all active mod.info files, and a summary report into one file — handy for attaching to bug reports or sharing with a mod author.
 
 ### Conflicts tab
 
@@ -91,7 +104,7 @@ The left panel lists every file where two or more mods overlap. Click any confli
 
 ### Load Order tab
 
-Shows the topologically-sorted load order on the left and the full dependency edge list on the right. If there are circular dependencies they show up in red at the top of the right panel. Hit **Apply Order** to write the suggested order to disk.
+Shows the topologically-sorted load order on the left and the full dependency edge list on the right. Circular dependencies show up in red at the top of the right panel. Hit **Apply Order** to write the suggested order to disk.
 
 ### Errors tab
 
@@ -139,7 +152,7 @@ Open the **AI Assistant** tab and type in the input box. You can start fresh con
 
 For context-aware questions, use the right-click menus rather than copy-pasting:
 
-- In the **Mods** tab: right-click any mod and choose **Ask AI about this mod** (attaches mod.info) or **Debug this mod with AI** (attaches mod.info, errors, and key Lua files)
+- In the **Mods** tab: right-click any mod and choose **Ask AI about this mod** (attaches mod.info), **Debug this mod with AI** (attaches mod.info, errors, and key Lua files), or **Ask AI about scan findings** (attaches the security scan verdict and findings)
 - In the **Errors** tab: right-click any error and choose **Ask AI about this error** (attaches the error and optionally the source `.lua` file)
 
 Attachments appear as chips above the input box and can be removed individually before sending.
@@ -165,6 +178,7 @@ Open **History and Revert** in the AI tab at any time to see a list of every wri
 - Workshop mod patches will be overwritten when Steam updates those mods
 - `console.txt` accumulates across sessions. For clean results, launch PZ, reproduce your issue, quit, then rescan
 - If you enable **Watch console.txt** in Settings, the Errors tab updates live while the game is running
+- Security scan results are cached by mod content fingerprint in `%APPDATA%/pzmm/virus_scans.json` — unchanged mods aren't rescanned
 
 ---
 
@@ -176,8 +190,9 @@ MIT
 
 ## Developer
 
-Run unit tests locally:
+Run the test suite:
 
 ```bash
-python -m unittest discover -s tests -p "test_*.py" -v
+pip install pytest
+python -m pytest tests/
 ```
