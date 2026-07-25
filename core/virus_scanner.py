@@ -48,17 +48,21 @@ _SUSPECT_FILENAME_RE = re.compile(
 _MAX_FILE_SCAN_BYTES = 2 * 1024 * 1024
 
 # Bump whenever rules change so cached verdicts from older rule sets are rescanned.
-_ENGINE = "heuristic-v2"
+_ENGINE = "heuristic-v3"
 
 _SKIP_DIR_PARTS = {".git", "__pycache__", ".svn", "node_modules"}
 
 _PATTERN_RULES = [
+    # high = no legitimate use in a PZ mod, ever -> eligible for Block policy
     (re.compile(r"\bos\.execute\(", re.IGNORECASE), "high", "OS_EXECUTE"),
     (re.compile(r"\bio\.popen\(", re.IGNORECASE), "high", "IO_POPEN"),
-    (re.compile(r"\bloadstring\s*\(", re.IGNORECASE), "high", "LUA_LOADSTRING"),
-    (re.compile(r"\bloadfile\s*\(", re.IGNORECASE), "high", "LUA_LOADFILE"),
     (re.compile(r"\bpackage\.loadlib", re.IGNORECASE), "high", "PKG_LOADLIB"),
-    (re.compile(r"\bdofile\s*\(", re.IGNORECASE), "high", "LUA_DFILE"),
+    # medium = dynamic lua worth a look, but legit mods use these too
+    # (loadstring for save deserialization, dofile in copy-pasted generic lua);
+    # PZ deps load via require + media/lua auto-loading, so these are unusual, not damning
+    (re.compile(r"\bloadstring\s*\(", re.IGNORECASE), "medium", "LUA_LOADSTRING"),
+    (re.compile(r"\bloadfile\s*\(", re.IGNORECASE), "medium", "LUA_LOADFILE"),
+    (re.compile(r"\bdofile\s*\(", re.IGNORECASE), "medium", "LUA_DOFILE"),
     (re.compile(r"\brequire\s*\(\s*['\"]https?://", re.IGNORECASE), "medium", "REMOTE_REQUIRE"),
     (re.compile(r"\bsocket\.", re.IGNORECASE), "medium", "NETWORK_SOCKET"),
     (re.compile(r"\bhttp\.(?:get|post)\s*\(", re.IGNORECASE), "medium", "HTTP_REQUEST"),

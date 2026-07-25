@@ -47,6 +47,17 @@ def test_blocked_extension_flags_high(tmp_path):
     assert any(f.rule == "BLOCKED_EXTENSION" for f in result.findings)
 
 
+def test_dynamic_lua_is_medium_not_blocking(tmp_path):
+    mod = _make_mod(tmp_path, "SerializerMod", {
+        "media/lua/shared/serialize.lua": "local f = loadstring(data)\ndofile(cfg_path)\n",
+    })
+    result = virus_scanner.scan_mod(mod, mod_id="ser")
+    assert result.risk_level == "medium"
+    rules = {f.rule for f in result.findings}
+    assert "LUA_LOADSTRING" in rules
+    assert "LUA_DOFILE" in rules
+
+
 def test_filename_tokens_use_word_boundaries(tmp_path):
     mod = _make_mod(tmp_path, "GenMod", {
         "media/lua/client/generator.lua": "local x = 1\n",
